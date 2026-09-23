@@ -133,6 +133,16 @@ class TestHubC2RuntimeTests(unittest.TestCase):
         self.assertIsNone(self.guard.enqueue('commercial-uid', 'commercial-cid', self.content))
         self.assertTrue(self.guard.egress('commercial-cid', self.message))
 
+    def test_remote_pb_classifies_both_uid_and_cid(self):
+        self.assertFalse(self.guard.remote_pb_submit_allowed(SCOPE.uid, 'commercial-cid'))
+        self.assertFalse(self.guard.remote_pb_submit_allowed('commercial-uid', SCOPE.cid))
+        self.assertTrue(self.guard.remote_pb_submit_allowed('commercial-uid', 'commercial-cid'))
+
+    def test_remote_pb_registry_error_denies(self):
+        self.guard.is_test_uid = lambda uid: (_ for _ in ()).throw(ConnectionError('registry down'))
+        with self.assertRaises(C2Denied):
+            self.guard.remote_pb_submit_allowed(SCOPE.uid, SCOPE.cid)
+
     def test_revocation_after_enqueue_denies_egress(self):
         self.content.properties['headers']['testhub-c2'] = self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)
         self.lease = replace(self.lease, revoked=True)

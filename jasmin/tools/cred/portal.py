@@ -18,6 +18,20 @@ class JasminPBRealm:
 
 
 @implementer(portal.IRealm)
+class SMPPClientManagerPBRealm(JasminPBRealm):
+    """Give each PB login a facade that denies Test Hub identity spoofing."""
+
+    def requestAvatar(self, avatarId, mind, *interfaces):
+        if pb.IPerspective not in interfaces:
+            raise NotImplementedError
+
+        from jasmin.managers.clients import SMPPClientManagerPBAvatar
+
+        self.PBFactory.setAvatar(avatarId)
+        return pb.IPerspective, SMPPClientManagerPBAvatar(self.PBFactory), lambda: None
+
+
+@implementer(portal.IRealm)
 class SmppsRealm:
 
     def __init__(self, smpps_id, router_factory):

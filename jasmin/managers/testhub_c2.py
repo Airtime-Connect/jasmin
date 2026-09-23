@@ -141,6 +141,17 @@ class TestHubC2Runtime:
         self.get_lease = get_lease
         self.key = key
 
+    def remote_pb_submit_allowed(self, uid, cid):
+        """PB callers cannot assert a dedicated Test Hub UID or destination CID.
+
+        The shared PB manager accepts UID as a client argument. Authenticated
+        HTTP/SMPP entry points invoke the manager in process, outside PB.
+        """
+        try:
+            return not (self.is_test_uid(uid) or self.is_test_cid(cid))
+        except Exception as exc:
+            raise C2Denied('Test Hub principal classification unavailable') from exc
+
     def enqueue(self, authenticated_uid, routed_cid, content):
         try:
             protected = self.is_test_uid(authenticated_uid) or self.is_test_cid(routed_cid)

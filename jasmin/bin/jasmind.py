@@ -35,6 +35,7 @@ from jasmin.routing.router import RouterPB
 from jasmin.routing.throwers import deliverSmThrower, DLRThrower
 from jasmin.tools.cred.checkers import RouterAuthChecker
 from jasmin.tools.cred.portal import JasminPBRealm
+from jasmin.tools.cred.portal import SMPPClientManagerPBRealm
 from jasmin.tools.cred.portal import SmppsRealm
 from jasmin.tools.spread.pb import JasminPBPortalRoot
 from jasmin.config import ROOT_PATH
@@ -147,7 +148,7 @@ class JasminDaemon(BaseDaemon):
         self.components['smppcm-pb-factory'] = SMPPClientManagerPB(SMPPClientPBConfigInstance)
 
         # Set authentication portal
-        p = portal.Portal(JasminPBRealm(self.components['smppcm-pb-factory']))
+        p = portal.Portal(SMPPClientManagerPBRealm(self.components['smppcm-pb-factory']))
         if SMPPClientPBConfigInstance.authentication:
             c = InMemoryUsernamePasswordDatabaseDontUse()
             c.addUser(SMPPClientPBConfigInstance.admin_username, SMPPClientPBConfigInstance.admin_password)

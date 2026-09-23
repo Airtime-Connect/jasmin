@@ -23,10 +23,31 @@ LOG_CATEGORY = "jasmin-pb-client-mgmt"
 
 
 class ConfigProfileLoadingError(Exception):
-    """
-    Raised for any error occurring while loading a configuration
-    profile with perspective_load
-    """
+    """Raised for errors while loading a configuration profile."""
+
+
+class SMPPClientManagerPBAvatar(pb.Avatar):
+    """Per-login PB facade: remote callers may not submit protected traffic."""
+
+    def __init__(self, manager):
+        self.manager = manager
+
+    def __getattr__(self, name):
+        if name.startswith('perspective_') and name != 'perspective_submit_sm':
+            return getattr(self.manager, name)
+        raise AttributeError(name)
+
+    def perspective_submit_sm(self, uid, cid, *args, **kwargs):
+        guard = self.manager.testhub_c2_guard
+        if guard is not None:
+            try:
+                if not guard.remote_pb_submit_allowed(uid, cid):
+                    self.manager.log.error('Test Hub C2 denied remote PB submit for uid:%s cid:%s', uid, cid)
+                    return False
+            except C2Denied as exc:
+                self.manager.log.error('Test Hub C2 denied remote PB submit: %s', exc)
+                return False
+        return self.manager.perspective_submit_sm(uid, cid, *args, **kwargs)
 
 
 class SMPPClientManagerPB(pb.Avatar):
