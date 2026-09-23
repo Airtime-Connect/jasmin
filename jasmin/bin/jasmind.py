@@ -17,6 +17,7 @@ from twisted.web import server
 from jasmin.interceptor.configs import InterceptorPBClientConfig
 from jasmin.interceptor.proxies import InterceptorPBProxy
 from jasmin.managers.clients import SMPPClientManagerPB
+from jasmin.managers.testhub_c2_bootstrap import load_testhub_c2_guard
 from jasmin.managers.configs import SMPPClientPBConfig, DLRLookupConfig
 from jasmin.managers.dlr import DLRLookup
 from jasmin.protocols.cli.configs import JCliConfig
@@ -78,6 +79,15 @@ class JasminDaemon(BaseDaemon):
         handler.setFormatter(formatter)
         self.log.addHandler(handler)
         self.log.propagate = False
+        self._testhub_c2_configured = False
+        self._testhub_c2_guard = None
+
+    def configureTestHubC2(self):
+        """Resolve the authority once, before any PB or SMPP listener opens."""
+        if not self._testhub_c2_configured:
+            self._testhub_c2_guard = load_testhub_c2_guard()
+            self._testhub_c2_configured = True
+        return self._testhub_c2_guard
 
     @defer.inlineCallbacks
     def startRedisClient(self):
@@ -144,8 +154,11 @@ class JasminDaemon(BaseDaemon):
     def startSMPPClientManagerPBService(self):
         """Start SMPP Client Manager PB server"""
 
+        guard = self.configureTestHubC2()
         SMPPClientPBConfigInstance = SMPPClientPBConfig(self.options['config'])
         self.components['smppcm-pb-factory'] = SMPPClientManagerPB(SMPPClientPBConfigInstance)
+        if guard is not None:
+            self.components['smppcm-pb-factory'].setTestHubC2Guard(guard)
 
         # Set authentication portal
         p = portal.Portal(SMPPClientManagerPBRealm(self.components['smppcm-pb-factory']))
@@ -345,6 +358,7 @@ class JasminDaemon(BaseDaemon):
     def start(self):
         """Start Jasmind daemon"""
         self.log.info("Starting Jasmin Daemon ...")
+        self.configureTestHubC2()
 
         # Requirements check begin:
         ########################################################
@@ -537,6 +551,8 @@ if __name__ == '__main__':
 
         # Prepare to start
         ja_d = JasminDaemon(options)
+        # A requested guard must initialize before the reactor starts services.
+        ja_d.configureTestHubC2()
         # Setup signal handlers
         signal.signal(signal.SIGINT, ja_d.sighandler_stop)
         signal.signal(signal.SIGTERM, ja_d.sighandler_stop)
