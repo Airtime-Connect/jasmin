@@ -17,6 +17,7 @@ from smpp.twisted.protocol import SMPPSessionStates
 from .configs import SMPPClientSMListenerConfig
 from .content import SubmitSmContent
 from .listeners import SMPPClientSMListener
+from .testhub_c2 import C2Denied
 
 LOG_CATEGORY = "jasmin-pb-client-mgmt"
 
@@ -39,6 +40,7 @@ class SMPPClientManagerPB(pb.Avatar):
         self.connectors = []
         self.declared_queues = []
         self.pickleProtocol = pickle.HIGHEST_PROTOCOL
+        self.testhub_c2_guard = None
 
         # Persistence flag, accessed through perspective_is_persisted
         self.persisted = True
@@ -62,6 +64,12 @@ class SMPPClientManagerPB(pb.Avatar):
         self.pickleProtocol = self.config.pickle_protocol
 
         self.log.info('SMPP Client manager configured and ready.')
+
+    def setTestHubC2Guard(self, guard):
+        """Install an authority supplied by trusted runtime bootstrap, never by a client."""
+        self.testhub_c2_guard = guard
+        for connector in self.connectors:
+            connector['sm_listener'].testhub_c2_guard = guard
 
     def setAvatar(self, avatar):
         if type(avatar) is str:
@@ -267,6 +275,7 @@ class SMPPClientManagerPB(pb.Avatar):
             redisClient=self.redisClient,
             RouterPB=self.RouterPB,
             interceptorpb_client=self.interceptorpb_client)
+        smListener.testhub_c2_guard = self.testhub_c2_guard
 
         # Deliver_sm are sent to smListener's deliver_sm callback method
         serviceManager.SMPPClientFactory.msgHandler = smListener.deliver_sm_event_interceptor
@@ -591,6 +600,14 @@ class SMPPClientManagerPB(pb.Avatar):
             expiration=validity_period,
             source_connector='httpapi' if source_connector == 'httpapi' else 'smppsapi',
             destination_cid=cid)
+        if self.testhub_c2_guard is not None:
+            try:
+                provenance = self.testhub_c2_guard.enqueue(uid, cid, c)
+                if provenance is not None:
+                    c.properties['headers']['testhub-c2'] = provenance
+            except C2Denied as exc:
+                self.log.error('Test Hub C2 denied enqueue for uid:%s cid:%s: %s', uid, cid, exc)
+                defer.returnValue(False)
         yield self.amqpBroker.publish(exchange='messaging', routing_key=pubQueueName, content=c)
 
         if source_connector == 'httpapi' and dlr_url is not None:
