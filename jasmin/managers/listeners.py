@@ -22,6 +22,7 @@ from jasmin.tools.tlv import format_tlvs_for_log
 from jasmin.routing.Routables import RoutableDeliverSm
 from jasmin.routing.jasminApi import Connector
 from jasmin.tools import qos
+from jasmin.managers.testhub_c2 import C2Denied
 
 LOG_CATEGORY = "jasmin-sm-listener"
 
@@ -44,6 +45,7 @@ class SMPPClientSMListener:
         self.qos_last_submit_sm_at = None
         self.rejectTimers = {}
         self.submit_retrials = {}
+        self.testhub_c2_guard = None
         self.qosTimer = None
 
         # Set pickleProtocol
@@ -267,6 +269,16 @@ class SMPPClientSMListener:
                 self.log.error("Rejecting SubmitSmPDU[%s]: %s", msgid, err)
                 yield self.rejectMessage(message)
                 defer.returnValue(False)
+
+            # Recheck current lease and signed AMQP provenance immediately before egress.
+            if self.testhub_c2_guard is not None:
+                try:
+                    self.testhub_c2_guard.egress(self.SMPPClientFactory.config.id, message)
+                except C2Denied as exc:
+                    self.log.error('Test Hub C2 denied egress for msgid:%s cid:%s: %s',
+                                   msgid, self.SMPPClientFactory.config.id, exc)
+                    yield self.rejectMessage(message)
+                    defer.returnValue(False)
 
             # Finally: send the sms !
             self.log.debug("Sending SubmitSmPDU[%s] through SMPPClientFactory [cid:%s] after %s requeues.",
