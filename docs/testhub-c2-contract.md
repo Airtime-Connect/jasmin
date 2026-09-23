@@ -18,12 +18,21 @@ does not make C2 operational or permit a live Test Hub run.
 
 The runtime bootstrap must supply authoritative `is_test_uid`, `is_test_cid`,
 `get_scope` and `get_lease` functions with complete, fresh classifications.
+`get_lease(uid)` assumes at most one active route/test lease per dedicated UID;
+the provisioner must enforce that uniqueness and atomically revoke an old
+generation before issuing a replacement.
 Test Hub UIDs and CIDs must be dedicated and cannot share commercial routes.
 The key must come from the sovereign vault, be at least 32 random bytes, and
 must never be committed, logged, or sent over a client protocol. The control
 plane alone creates and renews leases. The registry must bind each authenticated
 UID to exactly one tenant and exact CID. No HTTP request value, SMPP TLV,
 `source_connector`, or AMQP header can establish that binding.
+
+The shared PB manager receives `uid` as an argument; it does not independently
+authenticate that UID. Only trusted HTTP/SMPP components may invoke
+`perspective_submit_sm`, and the PB interface must be restricted so another PB
+client cannot submit a Test Hub UID and turn the manager into a signing oracle.
+That access-control proof is also absent from this PR.
 
 Broker policy must deny direct untrusted publication to `messaging` /
 `submit.sm.*` and access to the signing key. Otherwise a message stripped of
