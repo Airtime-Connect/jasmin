@@ -20,15 +20,19 @@ signing-oracle path for protected identities under complete registry lookup.
 The facade does not turn the client-supplied UID into authenticated identity;
 it excludes protected identities from that remote interface altogether.
 
-This PR **does not install** `TestHubC2Runtime` at daemon bootstrap. Until a
-trusted bootstrap calls `setTestHubC2Guard`, the new hooks are inert. This PR
-does not make C2 operational or permit a live Test Hub run.
-
-The runtime bootstrap must install the guard **before** the PB server begins
-listening or any SMPP connector starts consuming. If the registry, lease store
-or key is unavailable at startup, the protected service must not start; a
-late setter call leaves a window where PB traffic is unrestricted. No secret
-or production connection is loaded by this PR.
+The daemon now loads a trusted factory before it starts services and installs
+its `TestHubC2Runtime` on the manager before PB listens or any connector can
+consume. A protected deployment must set `JASMIN_TESTHUB_C2_REQUIRED=1` and
+`JASMIN_TESTHUB_C2_FACTORY=package.module:function`. The function must return
+a complete synchronous runtime with a key of at least 32 bytes. Missing,
+invalid, or failing authority initialization stops startup; a factory supplied
+without the required flag is rejected. The factory must be packaged and
+reviewed as part of the trusted deployment image, and must obtain registry,
+lease and key material from sovereign infrastructure. The PR supplies the
+bootstrap contract but **does not supply that factory, sovereign authority,
+secrets, or production connection**. C2 remains NO-GO and no live Test Hub run
+is permitted. A non-Test Hub instance can start with both bootstrap settings
+absent; that path has no Test Hub guard and must never host dedicated routes.
 
 The runtime bootstrap must supply authoritative `is_test_uid`, `is_test_cid`,
 `get_scope` and `get_lease` functions with complete, fresh classifications.
@@ -56,14 +60,15 @@ before activation. No such evidence is part of this PR.
 
 ## Evidence and remaining gate
 
-`python3 -m unittest -v tests.managers.test_testhub_c2
-tests.managers.test_testhub_c2_hooks` runs 26 contract, enqueue-hook and PB
-facade tests using a fake broker, without SMSC or live SMS. The tests and imports
+`python3 -m unittest -q tests.managers.test_testhub_c2_bootstrap
+tests.managers.test_testhub_c2 tests.managers.test_testhub_c2_hooks` runs 34
+bootstrap, contract, enqueue-hook and PB facade tests using a fake broker,
+without SMSC or live SMS. The tests and imports
 run on Python 3.12 with the fork's declared dependencies in a temporary venv.
 `python3 -m twisted.trial tests.managers.test_testhub_c2_pb_portal` adds one
 real loopback PB login/dispatch test with a fake manager; it verifies denial of
 a protected remote submit and delegation of an ordinary method. It uses no
-broker or SMSC. `python3 -m compileall -q` covers the edited modules. Full
+broker or SMSC. `git diff --check` covers edited modules. Full
 Jasmin integration tests with a broker were not run here. A controlled end-to-end
 egress test must show that a
 Test Hub UID cannot reach a commercial CID through either HTTP or SMPP and
