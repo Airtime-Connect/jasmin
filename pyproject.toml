@@ -51,6 +51,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+testhub-c2 = ["psycopg[binary]>=3.2,<4"]
 test = [
     "testfixtures>=3.0.0",
     "sphinx>=1.1.0",

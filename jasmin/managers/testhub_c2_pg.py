@@ -17,18 +17,28 @@ class PostgresC2Authority:
     def _one(self, query, value):
         connection = None
         cursor = None
+        cleanup_failed = False
         try:
             connection = self.connection_factory()
             cursor = connection.cursor()
             cursor.execute(query, (value,))
-            return cursor.fetchone()
-        except Exception as exc:
-            raise C2Denied('C2 registry or lease store unavailable') from exc
+            row = cursor.fetchone()
+        except Exception:
+            raise C2Denied('C2 registry or lease store unavailable') from None
         finally:
             if cursor is not None:
-                cursor.close()
+                try:
+                    cursor.close()
+                except Exception:
+                    cleanup_failed = True
             if connection is not None:
-                connection.close()
+                try:
+                    connection.close()
+                except Exception:
+                    cleanup_failed = True
+        if cleanup_failed:
+            raise C2Denied('C2 registry or lease store unavailable') from None
+        return row
 
     def is_test_uid(self, uid):
         if not isinstance(uid, str) or not uid:
@@ -47,7 +57,7 @@ class PostgresC2Authority:
             raise C2Denied('invalid UID')
         row = self._one(
             'SELECT p.uid, p.tenant_id::text, p.cid, '
-            '(p.enabled AND c.enabled) '
+            '(p.enabled AND c.enabled AND c.is_airtime) '
             'FROM testhub.c2_principals p '
             'JOIN testhub.airtime_connectors c ON c.connector_id = p.connector_id '
             'WHERE p.uid = %s', uid)

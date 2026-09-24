@@ -26,14 +26,15 @@ it excludes protected identities from that remote interface altogether.
 The daemon now loads a trusted factory before it starts services and installs
 its `TestHubC2Runtime` on the manager before PB listens or any connector can
 consume. A protected deployment must set `JASMIN_TESTHUB_C2_REQUIRED=1` and
-`JASMIN_TESTHUB_C2_FACTORY=package.module:function`. The function must return
+`JASMIN_TESTHUB_C2_FACTORY=jasmin.managers.testhub_c2_sovereign:build`. The function must return
 a complete synchronous runtime with a key of at least 32 bytes. Missing,
 invalid, or failing authority initialization stops startup; a factory supplied
 without the required flag is rejected. The factory must be packaged and
 reviewed as part of the trusted deployment image, and must obtain registry,
-lease and key material from sovereign infrastructure. The PR supplies the
-bootstrap contract but **does not supply that factory, sovereign authority,
-secrets, or production connection**. C2 remains NO-GO and no live Test Hub run
+lease and key material from sovereign infrastructure. The stacked factory
+candidate supplies code and synthetic tests but **does not prove the vault
+helper, sovereign role, TLS endpoint, image packaging, or production
+connection**. C2 remains NO-GO and no live Test Hub run
 is permitted. A non-Test Hub instance can start with both bootstrap settings
 absent; that path has no Test Hub guard and must never host dedicated routes.
 
