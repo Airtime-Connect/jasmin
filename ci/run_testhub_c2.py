@@ -16,7 +16,7 @@ TEST_MODULES = (
     'tests.managers.test_testhub_c2_hooks',
     'tests.managers.test_testhub_c2_pre_deserialize',
 )
-MINIMUM_TESTS = 59
+MINIMUM_TESTS = 63
 
 
 def main():

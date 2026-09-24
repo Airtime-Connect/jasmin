@@ -1,22 +1,25 @@
 """Synthetic sovereign startup tests; no vault, broker, or socket is used."""
 
 import base64
+import json
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from jasmin.managers.testhub_c2 import C2Denied, TestHubC2Runtime
 from jasmin.managers.testhub_c2_pg import PostgresC2Authority
 from jasmin.managers.testhub_c2_bootstrap import load_testhub_c2_guard
 from jasmin.managers.testhub_c2_sovereign import (
-    C2SovereignError, DB_SECRET, KEY_SECRET, ROLE_PREFLIGHT, VAULT_HELPER,
-    _build, _read_secret,
+    C2SovereignError, DB_SECRET, KEY_SECRET, RESERVED_SECRET, ROLE_PREFLIGHT,
+    VAULT_HELPER, _build, _read_secret,
 )
 
 
 DOMAIN = 'testhub.example'
 DSN = b'postgresql://reader@db.example/testhub?sslmode=verify-full'
 KEY = base64.b64encode(b'k' * 32)
+RESERVED = json.dumps({'principals': [{'uid': 'reserved-uid', 'cid': 'reserved-cid'}]}).encode()
 
 
 class FakeCursor:
@@ -25,6 +28,8 @@ class FakeCursor:
         self.fail_execute = fail_execute
         self.fail_close = fail_close
         self.queries = []
+        self.scope_row = ('reserved-uid', '11111111-1111-1111-1111-111111111111',
+                          'reserved-cid', True)
 
     def execute(self, query, args=None):
         self.queries.append((query, args))
@@ -32,6 +37,11 @@ class FakeCursor:
             raise RuntimeError('sensitive SQL detail')
 
     def fetchone(self):
+        query, args = self.queries[-1]
+        if 'JOIN testhub.airtime_connectors' in query:
+            return self.scope_row if args == ('reserved-uid',) else None
+        if 'SELECT 1 FROM testhub.c2_principals' in query:
+            return None
         return self.row
 
     def close(self):
@@ -56,7 +66,7 @@ class FakeConnection:
 
 class SovereignFactoryTests(unittest.TestCase):
     def setUp(self):
-        self.values = {DB_SECRET: DSN, KEY_SECRET: KEY}
+        self.values = {DB_SECRET: DSN, KEY_SECRET: KEY, RESERVED_SECRET: RESERVED}
         self.read_secret = Mock(side_effect=lambda domain, name: self.values[name])
         self.connection = FakeConnection()
         self.connect = Mock(return_value=self.connection)
@@ -101,12 +111,51 @@ class SovereignFactoryTests(unittest.TestCase):
         self.assertIsInstance(guard, TestHubC2Runtime)
         self.assertEqual(guard.key, b'k' * 32)
         self.assertIsInstance(guard.get_scope.__self__, PostgresC2Authority)
-        self.assertEqual(self.read_secret.call_count, 2)
+        self.assertEqual(self.read_secret.call_count, 3)
         self.read_secret.assert_any_call(DOMAIN, DB_SECRET)
         self.read_secret.assert_any_call(DOMAIN, KEY_SECRET)
-        self.connect.assert_called_once_with(DSN.decode())
-        self.assertEqual(self.connection.fake_cursor.queries, [(ROLE_PREFLIGHT, None)])
+        self.read_secret.assert_any_call(DOMAIN, RESERVED_SECRET)
+        self.assertEqual(self.connect.call_count, 2)
+        self.assertEqual(self.connection.fake_cursor.queries[0], (ROLE_PREFLIGHT, None))
         self.assertTrue(self.connection.closed)
+
+    def test_reserved_ids_remain_protected_after_registry_row_disappears(self):
+        guard = self.build()
+        self.connection.fake_cursor.scope_row = None
+        self.assertFalse(guard.remote_pb_submit_allowed('reserved-uid', 'commercial-cid'))
+        self.assertFalse(guard.remote_pb_submit_allowed('commercial-uid', 'reserved-cid'))
+        with self.assertRaises(C2Denied):
+            guard.enqueue('reserved-uid', 'reserved-cid', SimpleNamespace(
+                properties={'message-id': 'mid'}, body=b'payload'))
+        with self.assertRaises(C2Denied):
+            guard.egress('reserved-cid', SimpleNamespace(content=SimpleNamespace(
+                properties={'message-id': 'mid', 'headers': {}}, body=b'payload')))
+
+    def test_unlisted_commercial_identifiers_still_use_registry(self):
+        guard = self.build()
+        self.assertTrue(guard.remote_pb_submit_allowed('commercial-uid', 'commercial-cid'))
+        self.assertIsNone(guard.enqueue('commercial-uid', 'commercial-cid',
+                                       SimpleNamespace(properties={'message-id': 'mid'}, body=b'payload')))
+        self.assertTrue(guard.egress('commercial-cid', SimpleNamespace(content=SimpleNamespace(
+            properties={'message-id': 'mid', 'headers': {}}, body=b'payload'))))
+
+    def test_inventory_missing_or_mismatched_registry_fails_startup(self):
+        for scope in (None, ('reserved-uid', 'tenant', 'wrong-cid', True)):
+            self.connection.fake_cursor.scope_row = scope
+            with self.subTest(scope=scope), self.assertRaisesRegex(
+                    C2SovereignError, '^C2 reserved identifier reconciliation failed$'):
+                self.build()
+
+    def test_inventory_malformed_or_duplicate_fails_startup(self):
+        for document in (b'', b'{}', b'{"principals":[]}', b'{"principals":[{"uid":"a","cid":"b"}, {"uid":"a","cid":"c"}]}',
+                         b'{"principals":[{"uid":" a","cid":"b"}]}'):
+            self.values[RESERVED_SECRET] = document
+            with self.subTest(document=document), self.assertRaisesRegex(
+                    C2SovereignError, '^C2 reserved identifier inventory invalid$'):
+                self.build()
+        self.values.pop(RESERVED_SECRET)
+        with self.assertRaises(KeyError):
+            self.build()
 
     def test_required_bootstrap_loads_exact_sovereign_factory(self):
         config = {**self.environ, 'JASMIN_TESTHUB_C2_REQUIRED': '1',

@@ -7,6 +7,7 @@ credentials. The bootstrap calls build() only when C2_REQUIRED=1.
 import base64
 import binascii
 import importlib
+import json
 import os
 import re
 import subprocess
@@ -19,6 +20,7 @@ from .testhub_c2_pg import PostgresC2Authority
 VAULT_HELPER = '/opt/vault/bin/read-secret.sh'
 DB_SECRET = 'testhub-c2-db-url'
 KEY_SECRET = 'testhub-c2-hmac-key-b64'
+RESERVED_SECRET = 'testhub-c2-reserved-identifiers-json'
 SAFE_DOMAIN = re.compile(r'^(?!.*\.\.)(?!\.)([A-Za-z0-9][A-Za-z0-9._-]*)$')
 
 # A cross-tenant classifier must see all reserved UIDs/CIDs. This query also
@@ -106,12 +108,39 @@ def _preflight(connection_factory):
         raise C2SovereignError('C2 database role preflight failed') from None
 
 
+def _reserved_identifiers(raw):
+    """Exact, independently inventoried Jasmin IDs; never infer from a prefix."""
+    try:
+        document = json.loads(raw)
+        if type(document) is not dict or set(document) != {'principals'}:
+            raise ValueError()
+        pairs = document['principals']
+        if type(pairs) is not list or not 1 <= len(pairs) <= 4096:
+            raise ValueError()
+        uids, cids = set(), set()
+        for pair in pairs:
+            if type(pair) is not dict or set(pair) != {'uid', 'cid'}:
+                raise ValueError()
+            uid, cid = pair['uid'], pair['cid']
+            if (type(uid) is not str or type(cid) is not str or not uid or not cid
+                    or uid != uid.strip() or cid != cid.strip()
+                    or len(uid) > 256 or len(cid) > 256
+                    or uid in uids or cid in cids):
+                raise ValueError()
+            uids.add(uid)
+            cids.add(cid)
+        return tuple((pair['uid'], pair['cid']) for pair in pairs), frozenset(uids), frozenset(cids)
+    except (ValueError, TypeError, UnicodeError):
+        raise C2SovereignError('C2 reserved identifier inventory invalid') from None
+
+
 def _build(environ, read_secret, connect):
     domain = environ.get('JASMIN_TESTHUB_C2_VAULT_DOMAIN', '')
     if not SAFE_DOMAIN.fullmatch(domain):
         raise C2SovereignError('C2 vault domain missing or invalid')
     raw_dsn = read_secret(domain, DB_SECRET)
     raw_key = read_secret(domain, KEY_SECRET)
+    raw_reserved = read_secret(domain, RESERVED_SECRET)
     try:
         dsn = raw_dsn.decode('utf-8')
         parsed = urlsplit(dsn)
@@ -128,7 +157,16 @@ def _build(environ, read_secret, connect):
     connection_factory = lambda: connect(dsn)
     _preflight(connection_factory)
     authority = PostgresC2Authority(connection_factory)
-    return TestHubC2Runtime(authority.is_test_uid, authority.is_test_cid,
+    pairs, reserved_uids, reserved_cids = _reserved_identifiers(raw_reserved)
+    try:
+        for uid, cid in pairs:
+            scope = authority.get_scope(uid)
+            if scope is None or scope.cid != cid:
+                raise ValueError()
+    except Exception:
+        raise C2SovereignError('C2 reserved identifier reconciliation failed') from None
+    return TestHubC2Runtime(lambda uid: uid in reserved_uids or authority.is_test_uid(uid),
+                            lambda cid: cid in reserved_cids or authority.is_test_cid(cid),
                             authority.get_scope, authority.get_lease, key)
 
 
