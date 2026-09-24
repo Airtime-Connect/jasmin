@@ -6,7 +6,10 @@ path and at `SMPPClientSMListener.submit_sm_callback` immediately before
 The adapter checks the authenticated Jasmin UID and final routed CID, then signs
 the message ID, PDU bytes hash, tenant, route, test, UID, CID, lease generation
 and nonce. The consumer verifies that provenance and rechecks the current lease
-at egress. Test Hub connector queues reject messages without a valid token when
+before deserializing the AMQP PDU and again immediately before network send.
+The first check keeps unauthenticated protected-queue content away from
+`pickle.loads`; the second catches revocation or expiry during a queue or QoS
+delay. Test Hub connector queues reject messages without a valid token when
 the guard is installed. Store failure, revocation, queue delay beyond expiry and
 connector failover deny. A lookup never renews the lease.
 
@@ -39,6 +42,11 @@ The runtime bootstrap must supply authoritative `is_test_uid`, `is_test_cid`,
 `get_lease(uid)` assumes at most one active route/test lease per dedicated UID;
 the provisioner must enforce that uniqueness and atomically revoke an old
 generation before issuing a replacement.
+Both registry classifiers must affirm a protected UID and its exact protected
+CID at enqueue and egress. An incomplete classification on either side denies
+the attempted Test Hub message; any non-boolean or failed classifier result
+also denies. The registry must retain reserved identifiers
+until every queued message and lease has expired.
 Test Hub UIDs and CIDs must be dedicated and cannot share commercial routes.
 The key must come from the sovereign vault, be at least 32 random bytes, and
 must never be committed, logged, or sent over a client protocol. The control
@@ -55,13 +63,16 @@ be checked to prove this facade is active; this PR has no runtime proof.
 Broker policy must deny direct untrusted publication to `messaging` /
 `submit.sm.*` and access to the signing key. Otherwise a message stripped of
 its provenance and sent to an ordinary commercial CID cannot be identified by
-this guard. The deployed Jasmin image digest and broker ACLs must be verified
+this guard. Ordinary commercial queues still deserialize their existing AMQP
+payloads, so the broker publish ACL protects that separate trust boundary.
+The deployed Jasmin image digest and broker ACLs must be verified
 before activation. No such evidence is part of this PR.
 
 ## Evidence and remaining gate
 
 `python3 -m unittest -q tests.managers.test_testhub_c2_bootstrap
-tests.managers.test_testhub_c2 tests.managers.test_testhub_c2_hooks` runs 34
+tests.managers.test_testhub_c2 tests.managers.test_testhub_c2_hooks
+tests.managers.test_testhub_c2_pre_deserialize` runs 40
 bootstrap, contract, enqueue-hook and PB facade tests using a fake broker,
 without SMSC or live SMS. The tests and imports
 run on Python 3.12 with the fork's declared dependencies in a temporary venv.

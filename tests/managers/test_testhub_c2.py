@@ -51,6 +51,25 @@ class TestHubC2ContractTests(unittest.TestCase):
             with self.subTest(scope=scope), self.assertRaises(C2Denied):
                 self.enqueue(scope=scope)
 
+    def test_malformed_sovereign_authority_state_is_denied(self):
+        token = self.enqueue()
+        for scope in (replace(SCOPE, enabled='false'), replace(SCOPE, enabled=1)):
+            with self.subTest(scope=scope), self.assertRaises(C2Denied):
+                self.enqueue(scope=scope)
+            with self.subTest(scope=scope), self.assertRaises(C2Denied):
+                self.egress(provenance=token, scope=scope)
+        for lease in (replace(LEASE, revoked='false'), replace(LEASE, revoked=0),
+                      replace(LEASE, generation=True), replace(LEASE, not_before=True),
+                      replace(LEASE, expires_at=True)):
+            with self.subTest(lease=lease), self.assertRaises(C2Denied):
+                self.enqueue(lease=lease)
+            with self.subTest(lease=lease), self.assertRaises(C2Denied):
+                self.egress(provenance=token, lease=lease)
+        with self.assertRaises(C2Denied):
+            self.enqueue(now=True)
+        with self.assertRaises(C2Denied):
+            self.egress(provenance=token, now=True)
+
     def test_missing_revoked_expired_or_not_yet_valid_lease_is_denied(self):
         for lease, now in ((None, 120), (replace(LEASE, revoked=True), 120),
                            (LEASE, 160), (LEASE, 99)):
@@ -119,6 +138,22 @@ class TestHubC2RuntimeTests(unittest.TestCase):
         with self.assertRaises(C2Denied):
             self.guard.enqueue(SCOPE.uid, 'commercial-cid', self.content)
 
+    def test_commercial_principal_cannot_use_reserved_connector(self):
+        with self.assertRaises(C2Denied):
+            self.guard.enqueue('commercial-uid', SCOPE.cid, self.content)
+
+    def test_incomplete_registry_cannot_sign_commercial_connector(self):
+        self.guard.is_test_cid = lambda cid: False
+        with self.assertRaises(C2Denied):
+            self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)
+
+    def test_incomplete_registry_cannot_egress_signed_message(self):
+        self.content.properties['headers']['testhub-c2'] = self.guard.enqueue(
+            SCOPE.uid, SCOPE.cid, self.content)
+        self.guard.is_test_uid = lambda uid: False
+        with self.assertRaises(C2Denied):
+            self.guard.egress(SCOPE.cid, self.message)
+
     def test_missing_scope_and_store_outage_deny(self):
         with self.assertRaises(C2Denied):
             self.guard.enqueue('commercial-uid', SCOPE.cid, self.content)
@@ -142,6 +177,17 @@ class TestHubC2RuntimeTests(unittest.TestCase):
         self.guard.is_test_uid = lambda uid: (_ for _ in ()).throw(ConnectionError('registry down'))
         with self.assertRaises(C2Denied):
             self.guard.remote_pb_submit_allowed(SCOPE.uid, SCOPE.cid)
+
+    def test_ambiguous_registry_result_denies_all_boundaries(self):
+        token = self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)
+        self.guard.is_test_uid = lambda uid: None
+        with self.assertRaises(C2Denied):
+            self.guard.remote_pb_submit_allowed('commercial-uid', 'commercial-cid')
+        with self.assertRaises(C2Denied):
+            self.guard.enqueue('commercial-uid', 'commercial-cid', self.content)
+        self.content.properties['headers']['testhub-c2'] = token
+        with self.assertRaises(C2Denied):
+            self.guard.egress(SCOPE.cid, self.message)
 
     def test_revocation_after_enqueue_denies_egress(self):
         self.content.properties['headers']['testhub-c2'] = self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)
