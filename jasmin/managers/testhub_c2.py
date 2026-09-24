@@ -69,13 +69,17 @@ def _check_scope(scope, lease, now):
     if not _required_text(scope.uid, scope.tenant_id, scope.cid, lease.route_id,
                           lease.tenant_id, lease.test_id, lease.uid, lease.cid, lease.nonce):
         raise C2Denied('incomplete scope or lease')
+    # A sovereign adapter must supply actual booleans. Truthy strings such as
+    # "false" must never turn a disabled principal into an enabled one.
+    if type(scope.enabled) is not bool or type(lease.revoked) is not bool:
+        raise C2Denied('invalid principal or lease state')
     if not scope.enabled or lease.revoked:
         raise C2Denied('disabled or revoked')
     if (scope.uid, scope.tenant_id, scope.cid) != (lease.uid, lease.tenant_id, lease.cid):
         raise C2Denied('principal, tenant, or connector mismatch')
-    if (not isinstance(lease.generation, int) or isinstance(lease.generation, bool)
-            or lease.generation < 1 or not isinstance(lease.not_before, int)
-            or not isinstance(lease.expires_at, int) or lease.expires_at <= lease.not_before):
+    if (type(lease.generation) is not int or lease.generation < 1
+            or type(lease.not_before) is not int or type(lease.expires_at) is not int
+            or type(now) is not int or lease.expires_at <= lease.not_before):
         raise C2Denied('invalid lease generation or interval')
     if now < lease.not_before or now >= lease.expires_at:
         raise C2Denied('lease outside its validity interval')

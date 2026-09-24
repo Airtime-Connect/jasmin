@@ -51,6 +51,25 @@ class TestHubC2ContractTests(unittest.TestCase):
             with self.subTest(scope=scope), self.assertRaises(C2Denied):
                 self.enqueue(scope=scope)
 
+    def test_malformed_sovereign_authority_state_is_denied(self):
+        token = self.enqueue()
+        for scope in (replace(SCOPE, enabled='false'), replace(SCOPE, enabled=1)):
+            with self.subTest(scope=scope), self.assertRaises(C2Denied):
+                self.enqueue(scope=scope)
+            with self.subTest(scope=scope), self.assertRaises(C2Denied):
+                self.egress(provenance=token, scope=scope)
+        for lease in (replace(LEASE, revoked='false'), replace(LEASE, revoked=0),
+                      replace(LEASE, generation=True), replace(LEASE, not_before=True),
+                      replace(LEASE, expires_at=True)):
+            with self.subTest(lease=lease), self.assertRaises(C2Denied):
+                self.enqueue(lease=lease)
+            with self.subTest(lease=lease), self.assertRaises(C2Denied):
+                self.egress(provenance=token, lease=lease)
+        with self.assertRaises(C2Denied):
+            self.enqueue(now=True)
+        with self.assertRaises(C2Denied):
+            self.egress(provenance=token, now=True)
+
     def test_missing_revoked_expired_or_not_yet_valid_lease_is_denied(self):
         for lease, now in ((None, 120), (replace(LEASE, revoked=True), 120),
                            (LEASE, 160), (LEASE, 99)):
