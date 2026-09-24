@@ -1,0 +1,22 @@
+name: Test Hub C2 focused
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  c2-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install declared Jasmin and C2 dependencies
+        run: python -m pip install -e '.[testhub-c2]'
+      - name: Run nonempty C2 suite with no skips
+        run: python ci/run_testhub_c2.py
