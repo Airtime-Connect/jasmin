@@ -15,6 +15,8 @@ class FakeStore:
                       self.uid[1], '33333333-3333-3333-3333-333333333333',
                       'test-uid', 'test-cid', 1, 1, 4102444800, 'nonce', False)
         self.down = False
+        self.commercial = False
+        self.fail_close = False
         self.calls = []
 
     def connect(self):
@@ -33,6 +35,8 @@ class FakeConnection:
 
     def close(self):
         self.closed = True
+        if self.store.fail_close:
+            raise RuntimeError('sensitive connection close detail')
 
 
 class FakeCursor:
@@ -47,6 +51,8 @@ class FakeCursor:
             self.row = self.store.lease if args[0] == 'test-uid' else None
         elif 'JOIN testhub.airtime_connectors' in sql:
             self.row = self.store.uid if args[0] == 'test-uid' else None
+            if self.row and self.store.commercial and 'c.is_airtime' in sql:
+                self.row = (*self.row[:-1], False)
         elif 'WHERE uid' in sql:
             self.row = (1,) if args[0] == 'test-uid' else None
         else:
@@ -56,7 +62,8 @@ class FakeCursor:
         return self.row
 
     def close(self):
-        pass
+        if self.store.fail_close:
+            raise RuntimeError('sensitive cursor close detail')
 
 
 class PostgresC2AuthorityTests(unittest.TestCase):
@@ -100,6 +107,12 @@ class PostgresC2AuthorityTests(unittest.TestCase):
         with self.assertRaises(C2Denied):
             self.guard.enqueue('test-uid', 'test-cid', self.content())
 
+    def test_commercial_connector_is_airtime_false_denies(self):
+        self.store.commercial = True
+        with self.assertRaises(C2Denied):
+            self.guard.enqueue('test-uid', 'test-cid', self.content())
+        self.assertTrue(any('c.is_airtime' in sql for sql, _ in self.store.calls))
+
     def test_registry_reserves_disabled_ids_for_pb_denial(self):
         self.store.uid = (*self.store.uid[:-1], False)
         self.assertFalse(self.guard.remote_pb_submit_allowed('test-uid', 'commercial-cid'))
@@ -119,6 +132,15 @@ class PostgresC2AuthorityTests(unittest.TestCase):
         self.store.lease = self.store.lease[:-1]
         with self.assertRaises(C2Denied):
             self.authority.get_lease('test-uid')
+
+    def test_cleanup_errors_do_not_escape_or_leak(self):
+        self.store.fail_close = True
+        with self.assertRaisesRegex(C2Denied, '^C2 registry or lease store unavailable$'):
+            self.authority.is_test_uid('test-uid')
+        self.store.down = True
+        with self.assertRaisesRegex(C2Denied, '^C2 registry or lease store unavailable$') as raised:
+            self.authority.is_test_uid('test-uid')
+        self.assertNotIn('sensitive', str(raised.exception))
 
 
 if __name__ == '__main__':
