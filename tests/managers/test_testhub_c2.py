@@ -119,6 +119,22 @@ class TestHubC2RuntimeTests(unittest.TestCase):
         with self.assertRaises(C2Denied):
             self.guard.enqueue(SCOPE.uid, 'commercial-cid', self.content)
 
+    def test_commercial_principal_cannot_use_reserved_connector(self):
+        with self.assertRaises(C2Denied):
+            self.guard.enqueue('commercial-uid', SCOPE.cid, self.content)
+
+    def test_incomplete_registry_cannot_sign_commercial_connector(self):
+        self.guard.is_test_cid = lambda cid: False
+        with self.assertRaises(C2Denied):
+            self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)
+
+    def test_incomplete_registry_cannot_egress_signed_message(self):
+        self.content.properties['headers']['testhub-c2'] = self.guard.enqueue(
+            SCOPE.uid, SCOPE.cid, self.content)
+        self.guard.is_test_uid = lambda uid: False
+        with self.assertRaises(C2Denied):
+            self.guard.egress(SCOPE.cid, self.message)
+
     def test_missing_scope_and_store_outage_deny(self):
         with self.assertRaises(C2Denied):
             self.guard.enqueue('commercial-uid', SCOPE.cid, self.content)
@@ -142,6 +158,17 @@ class TestHubC2RuntimeTests(unittest.TestCase):
         self.guard.is_test_uid = lambda uid: (_ for _ in ()).throw(ConnectionError('registry down'))
         with self.assertRaises(C2Denied):
             self.guard.remote_pb_submit_allowed(SCOPE.uid, SCOPE.cid)
+
+    def test_ambiguous_registry_result_denies_all_boundaries(self):
+        token = self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)
+        self.guard.is_test_uid = lambda uid: None
+        with self.assertRaises(C2Denied):
+            self.guard.remote_pb_submit_allowed('commercial-uid', 'commercial-cid')
+        with self.assertRaises(C2Denied):
+            self.guard.enqueue('commercial-uid', 'commercial-cid', self.content)
+        self.content.properties['headers']['testhub-c2'] = token
+        with self.assertRaises(C2Denied):
+            self.guard.egress(SCOPE.cid, self.message)
 
     def test_revocation_after_enqueue_denies_egress(self):
         self.content.properties['headers']['testhub-c2'] = self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)

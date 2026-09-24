@@ -137,9 +137,20 @@ class SMPPClientSMListener:
         msgid = None
         try:
             msgid = message.content.properties['message-id']
-            SubmitSmPDU = pickle.loads(message.content.body)
-
             self.submit_sm_q.get().addCallback(self.submit_sm_callback).addErrback(self.submit_sm_errback)
+
+            # AMQP content is pickled. Authenticate protected messages before
+            # deserializing them; pickle can execute code while loading.
+            if self.testhub_c2_guard is not None:
+                try:
+                    self.testhub_c2_guard.egress(self.SMPPClientFactory.config.id, message)
+                except C2Denied as exc:
+                    self.log.error('Test Hub C2 denied pre-deserialization for msgid:%s cid:%s: %s',
+                                   msgid, self.SMPPClientFactory.config.id, exc)
+                    yield self.rejectMessage(message)
+                    defer.returnValue(False)
+
+            SubmitSmPDU = pickle.loads(message.content.body)
 
             self.log.debug("Callbacked a submit_sm with a SubmitSmPDU[%s] (?): %s", msgid, SubmitSmPDU)
 

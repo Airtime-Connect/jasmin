@@ -57,6 +57,12 @@ def _required_text(*values):
     return all(isinstance(value, str) and value and value.strip() == value for value in values)
 
 
+def _classified(value):
+    if type(value) is not bool:
+        raise C2Denied('principal classification unavailable')
+    return value
+
+
 def _check_scope(scope, lease, now):
     if scope is None or lease is None or not isinstance(scope, PrincipalScope) or not isinstance(lease, RouteLease):
         raise C2Denied('missing trusted scope or lease')
@@ -148,15 +154,20 @@ class TestHubC2Runtime:
         HTTP/SMPP entry points invoke the manager in process, outside PB.
         """
         try:
-            return not (self.is_test_uid(uid) or self.is_test_cid(cid))
+            test_uid = _classified(self.is_test_uid(uid))
+            test_cid = _classified(self.is_test_cid(cid))
+            return not (test_uid or test_cid)
         except Exception as exc:
             raise C2Denied('Test Hub principal classification unavailable') from exc
 
     def enqueue(self, authenticated_uid, routed_cid, content):
         try:
-            protected = self.is_test_uid(authenticated_uid) or self.is_test_cid(routed_cid)
-            if not protected:
+            test_uid = _classified(self.is_test_uid(authenticated_uid))
+            test_cid = _classified(self.is_test_cid(routed_cid))
+            if not test_uid and not test_cid:
                 return None
+            if not test_uid or not test_cid:
+                raise C2Denied('protected principal and connector must match')
             scope = self.get_scope(authenticated_uid)
             lease = self.get_lease(scope.uid) if scope is not None else None
             token = authorize_enqueue(content.properties['message-id'], authenticated_uid,
@@ -169,12 +180,14 @@ class TestHubC2Runtime:
         try:
             headers = message.content.properties.get('headers') or {}
             raw_token = headers.get('testhub-c2')
-            protected = self.is_test_cid(consumer_cid)
+            protected = _classified(self.is_test_cid(consumer_cid))
             if not protected and raw_token is None:
                 return True
             if not isinstance(raw_token, str):
                 raise C2Denied('missing signed Test Hub provenance')
             token = Provenance(**json.loads(raw_token))
+            if not protected or not _classified(self.is_test_uid(token.uid)):
+                raise C2Denied('protected principal and connector must match')
             scope = self.get_scope(token.uid)
             lease = self.get_lease(token.uid)
             return authorize_egress(token, message.content.properties['message-id'],
