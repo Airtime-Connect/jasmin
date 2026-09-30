@@ -144,12 +144,16 @@ class TestHubC2Runtime:
     untrusted publishers off `submit.sm.*` queues. The control plane owns leases.
     """
 
-    def __init__(self, is_test_uid, is_test_cid, get_scope, get_lease, key):
+    def __init__(self, is_test_uid, is_test_cid, get_scope, get_lease, key,
+                 verify_peer=None):
         self.is_test_uid = is_test_uid
         self.is_test_cid = is_test_cid
         self.get_scope = get_scope
         self.get_lease = get_lease
         self.key = key
+        # No production peer policy is provisioned yet. Protected egress must
+        # deny until a sovereign adapter verifies the *effective* connection.
+        self.verify_peer = verify_peer
 
     def remote_pb_submit_allowed(self, uid, cid):
         """PB callers cannot assert a dedicated Test Hub UID or destination CID.
@@ -187,13 +191,14 @@ class TestHubC2Runtime:
         except Exception as exc:
             raise C2Denied('Test Hub enqueue authority unavailable or denied') from exc
 
-    def egress(self, consumer_cid, message):
+    def authenticate_message(self, consumer_cid, message):
+        """Authenticate before pickle; return protected classification, not send approval."""
         try:
             headers = message.content.properties.get('headers') or {}
             raw_token = headers.get('testhub-c2')
             protected = _classified(self.is_test_cid(consumer_cid))
             if not protected and raw_token is None:
-                return True
+                return False
             if not isinstance(raw_token, str):
                 raise C2Denied('missing signed Test Hub provenance')
             token = Provenance(**json.loads(raw_token))
@@ -201,7 +206,34 @@ class TestHubC2Runtime:
                 raise C2Denied('protected principal and connector must match')
             scope = self.get_scope(token.uid)
             lease = self.get_lease(token.uid)
-            return authorize_egress(token, message.content.properties['message-id'],
-                                    consumer_cid, message.content.body, scope, lease, self.key)
+            authorize_egress(token, message.content.properties['message-id'],
+                             consumer_cid, message.content.body, scope, lease, self.key)
+            return True
+        except Exception as exc:
+            raise C2Denied('Test Hub message authority unavailable or denied') from exc
+
+    def egress(self, consumer_cid, message, connector_config=None, smpp_protocol=None):
+        """Recheck message authority and the live peer immediately before send."""
+        try:
+            protected = self.authenticate_message(consumer_cid, message)
+            # A signed Test Hub token on a commercial CID is denied above. A
+            # commercial message with no token takes the legacy path.
+            if not protected:
+                return True
+            # A configured host is a claim, not proof of the connected peer.
+            # Obtain the current transport at the pre-send boundary, then
+            # let an independently provisioned authority verify its identity.
+            if connector_config is None or connector_config.id != consumer_cid:
+                raise C2Denied('connector configuration mismatch')
+            transport = getattr(smpp_protocol, 'transport', None)
+            if (transport is None or not getattr(transport, 'connected', False)
+                    or not callable(getattr(transport, 'getPeer', None))):
+                raise C2Denied('live SMPP transport unavailable')
+            peer = transport.getPeer()
+            if peer is None or not callable(self.verify_peer):
+                raise C2Denied('SMPP peer authority unavailable')
+            if self.verify_peer(consumer_cid, connector_config, transport, peer) is not True:
+                raise C2Denied('SMPP peer identity denied')
+            return True
         except Exception as exc:
             raise C2Denied('Test Hub egress authority unavailable or denied') from exc

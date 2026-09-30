@@ -13,10 +13,11 @@ TEST_MODULES = (
     'tests.managers.test_testhub_c2_pg',
     'tests.managers.test_testhub_c2_bootstrap',
     'tests.managers.test_testhub_c2',
+    'tests.managers.test_testhub_c2_peer',
     'tests.managers.test_testhub_c2_hooks',
     'tests.managers.test_testhub_c2_pre_deserialize',
 )
-MINIMUM_TESTS = 68
+MINIMUM_TESTS = 73
 
 
 def main():

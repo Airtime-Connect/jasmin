@@ -120,19 +120,26 @@ class TestHubC2RuntimeTests(unittest.TestCase):
             lambda cid: cid == SCOPE.cid,
             lambda uid: SCOPE if uid == SCOPE.uid else None,
             lambda uid: self.lease if uid == SCOPE.uid else None,
-            KEY,
+            KEY, verify_peer=lambda cid, config, transport, peer: (
+                cid == SCOPE.cid and config.id == SCOPE.cid and peer.host == '192.0.2.10'),
         )
         self.content = SimpleNamespace(properties={'message-id': 'msg-a', 'headers': {}}, body=BODY)
         self.message = SimpleNamespace(content=self.content)
+        self.config = SimpleNamespace(id=SCOPE.cid)
+        self.protocol = SimpleNamespace(transport=SimpleNamespace(
+            connected=True, getPeer=lambda: SimpleNamespace(host='192.0.2.10')))
+
+    def egress(self, cid=None):
+        return self.guard.egress(cid or SCOPE.cid, self.message, self.config, self.protocol)
 
     def test_protected_message_passes_both_boundaries(self):
         token = self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)
         self.content.properties['headers']['testhub-c2'] = token
-        self.assertTrue(self.guard.egress(SCOPE.cid, self.message))
+        self.assertTrue(self.egress())
 
     def test_reserved_connector_rejects_missing_provenance(self):
         with self.assertRaises(C2Denied):
-            self.guard.egress(SCOPE.cid, self.message)
+            self.egress()
 
     def test_test_principal_cannot_failover_to_commercial_connector(self):
         with self.assertRaises(C2Denied):
@@ -152,7 +159,7 @@ class TestHubC2RuntimeTests(unittest.TestCase):
             SCOPE.uid, SCOPE.cid, self.content)
         self.guard.is_test_uid = lambda uid: False
         with self.assertRaises(C2Denied):
-            self.guard.egress(SCOPE.cid, self.message)
+            self.egress()
 
     def test_missing_scope_and_store_outage_deny(self):
         with self.assertRaises(C2Denied):
@@ -162,11 +169,11 @@ class TestHubC2RuntimeTests(unittest.TestCase):
             self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)
         self.content.properties['headers']['testhub-c2'] = 'forged'
         with self.assertRaises(C2Denied):
-            self.guard.egress(SCOPE.cid, self.message)
+            self.egress()
 
     def test_commercial_path_remains_unchanged(self):
         self.assertIsNone(self.guard.enqueue('commercial-uid', 'commercial-cid', self.content))
-        self.assertTrue(self.guard.egress('commercial-cid', self.message))
+        self.assertTrue(self.egress('commercial-cid'))
 
     def test_remote_pb_classifies_both_uid_and_cid(self):
         self.assertFalse(self.guard.remote_pb_submit_allowed(SCOPE.uid, 'commercial-cid'))
@@ -197,13 +204,13 @@ class TestHubC2RuntimeTests(unittest.TestCase):
             self.guard.enqueue('commercial-uid', 'commercial-cid', self.content)
         self.content.properties['headers']['testhub-c2'] = token
         with self.assertRaises(C2Denied):
-            self.guard.egress(SCOPE.cid, self.message)
+            self.egress()
 
     def test_revocation_after_enqueue_denies_egress(self):
         self.content.properties['headers']['testhub-c2'] = self.guard.enqueue(SCOPE.uid, SCOPE.cid, self.content)
         self.lease = replace(self.lease, revoked=True)
         with self.assertRaises(C2Denied):
-            self.guard.egress(SCOPE.cid, self.message)
+            self.egress()
 
 
 if __name__ == '__main__':
