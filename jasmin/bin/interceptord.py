@@ -14,6 +14,7 @@ from twisted.spread import pb
 
 from jasmin.interceptor.configs import InterceptorPBConfig
 from jasmin.interceptor.interceptor import InterceptorPB
+from jasmin.managers.testhub_c2_bootstrap import require_nondefault_interceptor_auth
 from jasmin.tools.cred.portal import JasminPBRealm
 from jasmin.tools.spread.pb import JasminPBPortalRoot
 from jasmin.config import ROOT_PATH
@@ -30,6 +31,11 @@ class Options(usage.Options):
 
 
 class InterceptorDaemon(BaseDaemon):
+    def __init__(self, opt):
+        super().__init__(opt)
+        if os.environ.get('JASMIN_TESTHUB_C2_REQUIRED') == '1':
+            require_nondefault_interceptor_auth(InterceptorPBConfig(opt['config']))
+
     def startInterceptorPBService(self):
         """Start Interceptor PB server"""
 

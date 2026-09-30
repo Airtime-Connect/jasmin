@@ -14,10 +14,13 @@ from twisted.python import usage
 from twisted.spread import pb
 from twisted.web import server
 
-from jasmin.interceptor.configs import InterceptorPBClientConfig
+from jasmin.interceptor.configs import InterceptorPBClientConfig, InterceptorPBConfig
 from jasmin.interceptor.proxies import InterceptorPBProxy
 from jasmin.managers.clients import SMPPClientManagerPB
-from jasmin.managers.testhub_c2_bootstrap import load_testhub_c2_guard
+from jasmin.managers.testhub_c2_bootstrap import (
+    load_testhub_c2_guard, require_nondefault_jcli_auth, require_nondefault_interceptor_auth,
+    require_nondefault_router_auth, require_nondefault_smppcm_auth,
+    require_nondefault_smpps_auth, require_nondefault_amqp_auth)
 from jasmin.managers.configs import SMPPClientPBConfig, DLRLookupConfig
 from jasmin.managers.dlr import DLRLookup
 from jasmin.protocols.cli.configs import JCliConfig
@@ -85,6 +88,18 @@ class JasminDaemon(BaseDaemon):
     def configureTestHubC2(self):
         """Resolve the authority once, before any PB or SMPP listener opens."""
         if not self._testhub_c2_configured:
+            if os.environ.get('JASMIN_TESTHUB_C2_REQUIRED') == '1':
+                config_file = self.options['config']
+                require_nondefault_router_auth(RouterPBConfig(config_file))
+                require_nondefault_smppcm_auth(SMPPClientPBConfig(config_file))
+                if not self.options.get('disable-smpp-server', False):
+                    require_nondefault_smpps_auth(SMPPServerPBConfig(config_file))
+                if not self.options.get('disable-jcli', False):
+                    require_nondefault_jcli_auth(JCliConfig(config_file))
+                if self.options.get('enable-interceptor-client', False):
+                    require_nondefault_interceptor_auth(
+                        InterceptorPBConfig('%s/interceptor.cfg' % CONFIG_PATH))
+                require_nondefault_amqp_auth(AmqpConfig(config_file))
             self._testhub_c2_guard = load_testhub_c2_guard()
             self._testhub_c2_configured = True
         return self._testhub_c2_guard

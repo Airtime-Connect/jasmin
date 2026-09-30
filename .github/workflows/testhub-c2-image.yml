@@ -4,9 +4,10 @@ on:
   pull_request:
     paths:
       - '.github/workflows/testhub-c2-image.yml'
+      - '.dockerignore'
       - 'docker/Dockerfile*'
       - 'pyproject.toml'
-      - 'jasmin/managers/testhub_c2_sovereign.py'
+      - 'jasmin/**'
   workflow_dispatch:
 
 jobs:
@@ -14,9 +15,64 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Bind image to the exact reviewed source
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
       - name: Build local Jasmin image without publishing
-        run: docker build --file docker/Dockerfile --tag testhub-c2-image:ci .
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          docker build --platform linux/amd64 --file docker/Dockerfile \
+            --label "org.opencontainers.image.revision=$SOURCE_SHA" \
+            --tag testhub-c2-image:ci .
       - name: Verify C2 reader driver and allocator from the built image
         run: |
-          docker run --rm --network none --entrypoint python testhub-c2-image:ci \
+          docker run --rm --network none --platform linux/amd64 \
+            --entrypoint python testhub-c2-image:ci \
             -c 'import ctypes, psycopg; from jasmin.managers.testhub_c2_sovereign import build; ctypes.CDLL("libjemalloc.so.2"); print("C2 image import and allocator PASS")'
+      - name: Verify packaged C2 startup and management guard
+        run: |
+          docker run --rm --network none --platform linux/amd64 \
+            --entrypoint python testhub-c2-image:ci \
+            /build/ci/run_testhub_c2.py
+          docker run --rm --network none --platform linux/amd64 \
+            --entrypoint python testhub-c2-image:ci \
+            /build/ci/check_testhub_c2_image_management.py
+      - name: Seal and reload the exact candidate image
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/testhub-c2-image"
+          image_id=$(docker image inspect testhub-c2-image:ci --format '{{.Id}}')
+          image_arch=$(docker image inspect testhub-c2-image:ci --format '{{.Architecture}}')
+          image_revision=$(docker image inspect testhub-c2-image:ci --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')
+          test "$image_arch" = amd64
+          test "$image_revision" = "$SOURCE_SHA"
+          docker run --rm --network none --platform linux/amd64 \
+            --entrypoint sh testhub-c2-image:ci \
+            -c 'test ! -e /build/.git && test ! -e /build/.env && test ! -e /build/.specify'
+          docker save testhub-c2-image:ci | gzip -1 -n > "$RUNNER_TEMP/testhub-c2-image/image.tar.gz"
+          gzip -t "$RUNNER_TEMP/testhub-c2-image/image.tar.gz"
+          archive_sha256=$(sha256sum "$RUNNER_TEMP/testhub-c2-image/image.tar.gz" | cut -d ' ' -f 1)
+          docker image rm testhub-c2-image:ci
+          docker load --input "$RUNNER_TEMP/testhub-c2-image/image.tar.gz"
+          test "$(docker image inspect testhub-c2-image:ci --format '{{.Id}}')" = "$image_id"
+          test "$(docker image inspect testhub-c2-image:ci --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$SOURCE_SHA"
+          docker run --rm --network none --platform linux/amd64 \
+            --entrypoint python testhub-c2-image:ci \
+            -c 'import ctypes, psycopg; from jasmin.managers.testhub_c2_sovereign import build; ctypes.CDLL("libjemalloc.so.2"); print("C2 reloaded image PASS")'
+          printf 'source_sha=%s\nplatform=linux/amd64\nimage_id=%s\narchive_sha256=%s\nci_run=https://github.com/%s/actions/runs/%s\n' \
+            "$SOURCE_SHA" "$image_id" "$archive_sha256" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" \
+            > "$RUNNER_TEMP/testhub-c2-image/receipt.txt"
+          cat "$RUNNER_TEMP/testhub-c2-image/receipt.txt"
+      - name: Retain candidate bytes and receipt for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: testhub-c2-image-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/testhub-c2-image/
+          if-no-files-found: error
+          retention-days: 7

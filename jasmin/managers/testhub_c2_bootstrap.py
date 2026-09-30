@@ -6,12 +6,72 @@ provide a factory backed by the sovereign control plane and SOPS vault.
 
 import importlib
 import os
+from hashlib import md5
 
 from .testhub_c2 import TestHubC2Runtime
 
 
 class C2BootstrapError(RuntimeError):
     """The requested C2 guard is not ready; the daemon must not start."""
+
+
+_SHIPPED_MANAGEMENT_USERS = frozenset((
+    'jcliadmin', 'iadmin', 'radmin', 'cmadmin', 'smppsadmin',
+))
+_SHIPPED_MANAGEMENT_DIGESTS = frozenset((
+    md5(b'jclipwd').digest(),
+    md5(b'ipwd').digest(),
+    bytes.fromhex('82a606ca5a0deea2b5777756788af5c8'),
+    bytes.fromhex('e1c5136acafb7016bc965597c992eb82'),
+    bytes.fromhex('e97ab122faa16beea8682d84f3d2eea4'),
+    md5(b'').digest(),
+))
+
+
+def _require_nondefault_management_auth(config, default_user, default_digest, endpoint):
+    username = config.admin_username
+    digest = config.admin_password
+    if (config.authentication is not True
+            or not isinstance(username, str) or not username or username != username.strip()
+            or username == default_user or username in _SHIPPED_MANAGEMENT_USERS
+            or not isinstance(digest, bytes) or len(digest) != 16
+            or digest == default_digest or digest in _SHIPPED_MANAGEMENT_DIGESTS):
+        raise C2BootstrapError('C2 %s management authentication is unsafe' % endpoint)
+
+
+def require_nondefault_jcli_auth(config):
+    """Reject shipped console credentials before the main daemon starts."""
+    _require_nondefault_management_auth(config, 'jcliadmin', md5(b'jclipwd').digest(), 'jCLI')
+
+
+def require_nondefault_interceptor_auth(config):
+    """Reject shipped interceptor PB credentials before its daemon starts."""
+    _require_nondefault_management_auth(config, 'iadmin', md5(b'ipwd').digest(), 'interceptor PB')
+
+
+def require_nondefault_router_auth(config):
+    _require_nondefault_management_auth(
+        config, 'radmin', bytes.fromhex('82a606ca5a0deea2b5777756788af5c8'), 'router PB')
+
+
+def require_nondefault_smppcm_auth(config):
+    _require_nondefault_management_auth(
+        config, 'cmadmin', bytes.fromhex('e1c5136acafb7016bc965597c992eb82'), 'SMPP client PB')
+
+
+def require_nondefault_smpps_auth(config):
+    _require_nondefault_management_auth(
+        config, 'smppsadmin', bytes.fromhex('e97ab122faa16beea8682d84f3d2eea4'), 'SMPP server PB')
+
+
+def require_nondefault_amqp_auth(config):
+    """The shipped broker identity cannot protect the C2 submit queues."""
+    username = config.username
+    password = config.password
+    if (not isinstance(username, str) or not username or username != username.strip()
+            or not isinstance(password, str) or not password or password != password.strip()
+            or username == 'guest' or password == 'guest'):
+        raise C2BootstrapError('C2 AMQP broker authentication is unsafe')
 
 
 def load_testhub_c2_guard(environ=None):
