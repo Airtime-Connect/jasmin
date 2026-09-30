@@ -17,7 +17,7 @@ from twisted.web import server
 from jasmin.interceptor.configs import InterceptorPBClientConfig
 from jasmin.interceptor.proxies import InterceptorPBProxy
 from jasmin.managers.clients import SMPPClientManagerPB
-from jasmin.managers.testhub_c2_bootstrap import load_testhub_c2_guard
+from jasmin.managers.testhub_c2_bootstrap import load_testhub_c2_guard, require_nondefault_jcli_auth
 from jasmin.managers.configs import SMPPClientPBConfig, DLRLookupConfig
 from jasmin.managers.dlr import DLRLookup
 from jasmin.protocols.cli.configs import JCliConfig
@@ -85,6 +85,9 @@ class JasminDaemon(BaseDaemon):
     def configureTestHubC2(self):
         """Resolve the authority once, before any PB or SMPP listener opens."""
         if not self._testhub_c2_configured:
+            if (os.environ.get('JASMIN_TESTHUB_C2_REQUIRED') == '1'
+                    and not self.options.get('disable-jcli', False)):
+                require_nondefault_jcli_auth(JCliConfig(self.options['config']))
             self._testhub_c2_guard = load_testhub_c2_guard()
             self._testhub_c2_configured = True
         return self._testhub_c2_guard

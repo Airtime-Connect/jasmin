@@ -6,12 +6,21 @@ provide a factory backed by the sovereign control plane and SOPS vault.
 
 import importlib
 import os
+from hashlib import md5
 
 from .testhub_c2 import TestHubC2Runtime
 
 
 class C2BootstrapError(RuntimeError):
     """The requested C2 guard is not ready; the daemon must not start."""
+
+
+def require_nondefault_jcli_auth(config):
+    """Reject shipped management credentials before the main daemon starts."""
+    if (not config.authentication
+            or config.admin_username == 'jcliadmin'
+            or config.admin_password == md5(b'jclipwd').digest()):
+        raise C2BootstrapError('C2 jCLI management authentication is unsafe')
 
 
 def load_testhub_c2_guard(environ=None):

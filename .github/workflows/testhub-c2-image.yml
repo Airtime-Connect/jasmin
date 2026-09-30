@@ -33,6 +33,11 @@ jobs:
           docker run --rm --network none --platform linux/amd64 \
             --entrypoint python testhub-c2-image:ci \
             -c 'import ctypes, psycopg; from jasmin.managers.testhub_c2_sovereign import build; ctypes.CDLL("libjemalloc.so.2"); print("C2 image import and allocator PASS")'
+      - name: Verify packaged C2 startup and management guard
+        run: |
+          docker run --rm --network none --platform linux/amd64 \
+            --entrypoint python testhub-c2-image:ci \
+            /build/ci/run_testhub_c2.py
       - name: Seal and reload the exact candidate image
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}

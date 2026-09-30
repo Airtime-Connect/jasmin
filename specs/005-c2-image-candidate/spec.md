@@ -11,7 +11,9 @@ The C2 image check must build from the exact PR head on `linux/amd64`, bind that
 - The PR checkout HEAD equals the head SHA recorded in the candidate receipt, rather than an implicit GitHub merge ref.
 - The image architecture is `amd64`; the `org.opencontainers.image.revision` label equals the reviewed source SHA.
 - C2 reader driver and allocator imports pass both before and after an offline `docker save`/`docker load` round trip.
+- The packaged image runs the nonempty C2 contract suite with no skips, including management authentication startup rejection.
 - The artifact contains `image.tar.gz` and `receipt.txt` with source SHA, platform, local image ID, archive SHA-256 and CI run link; the archive hash can be recomputed.
 - Git metadata, `.specify` and project `.env` files are absent from the built image. No image is published or deployed.
+- When C2 is required and jCLI is enabled, main-daemon startup rejects disabled jCLI authentication, the shipped admin username, or the shipped password digest before opening its PB or SMPP listeners. The target still needs an independently reviewed management-network ACL and configured credentials from the sovereign vault.
 
 The image ID and archive digest do not prove target installation, approved peer identity, broker ACL, vault/role provisioning or live C2 isolation. A target operator must independently verify the selected artifact and record the deployed digest under an approved change.

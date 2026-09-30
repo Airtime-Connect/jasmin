@@ -2,6 +2,7 @@
 
 import os
 import sys
+from hashlib import md5
 from types import ModuleType, SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -9,7 +10,8 @@ from unittest.mock import Mock, patch
 from jasmin.bin.jasmind import JasminDaemon
 from jasmin.managers.clients import SMPPClientManagerPBAvatar
 from jasmin.managers.testhub_c2 import TestHubC2Runtime
-from jasmin.managers.testhub_c2_bootstrap import C2BootstrapError, load_testhub_c2_guard
+from jasmin.managers.testhub_c2_bootstrap import (
+    C2BootstrapError, load_testhub_c2_guard, require_nondefault_jcli_auth)
 
 
 class C2BootstrapTests(unittest.TestCase):
@@ -40,6 +42,41 @@ class C2BootstrapTests(unittest.TestCase):
         with self.assertRaises(C2BootstrapError):
             load_testhub_c2_guard({'JASMIN_TESTHUB_C2_FACTORY': 'testhub_c2_test_adapter:build'})
         self.factory.assert_not_called()
+
+    def test_c2_jcli_auth_rejects_disabled_and_default_credentials(self):
+        custom = SimpleNamespace(authentication=True, admin_username='operator',
+                                 admin_password=md5(b'unique-test-password').digest())
+        require_nondefault_jcli_auth(custom)
+        for unsafe in (
+                SimpleNamespace(authentication=False, admin_username='operator',
+                                admin_password=custom.admin_password),
+                SimpleNamespace(authentication=True, admin_username='jcliadmin',
+                                admin_password=custom.admin_password),
+                SimpleNamespace(authentication=True, admin_username='operator',
+                                admin_password=md5(b'jclipwd').digest())):
+            with self.assertRaisesRegex(C2BootstrapError, 'jCLI management'):
+                require_nondefault_jcli_auth(unsafe)
+
+    def test_c2_jcli_auth_fails_before_authority_or_listener(self):
+        with patch('jasmin.bin.os.makedirs'):
+            daemon = JasminDaemon({'config': 'unused'})
+        defaults = SimpleNamespace(authentication=True, admin_username='jcliadmin',
+                                   admin_password=md5(b'jclipwd').digest())
+        with patch.dict(os.environ, self.config(), clear=True), \
+                patch('jasmin.bin.jasmind.JCliConfig', return_value=defaults), \
+                patch('jasmin.bin.jasmind.reactor.listenTCP') as listen:
+            with self.assertRaises(C2BootstrapError):
+                daemon.startSMPPClientManagerPBService()
+        self.factory.assert_not_called()
+        listen.assert_not_called()
+
+    def test_disabled_jcli_does_not_require_console_credentials(self):
+        with patch('jasmin.bin.os.makedirs'):
+            daemon = JasminDaemon({'config': 'unused', 'disable-jcli': True})
+        with patch.dict(os.environ, self.config(), clear=True), \
+                patch('jasmin.bin.jasmind.JCliConfig') as jcli_config:
+            self.assertIs(daemon.configureTestHubC2(), self.guard)
+        jcli_config.assert_not_called()
 
     def test_missing_factory_and_init_failure_are_fail_closed(self):
         with self.assertRaises(C2BootstrapError):
@@ -75,6 +112,9 @@ class C2BootstrapTests(unittest.TestCase):
         daemon.components['router-pb-factory'] = Mock()
         fake_config = SimpleNamespace(authentication=False, port=14001, bind='127.0.0.1')
         with patch.dict(os.environ, self.config(), clear=True), \
+                patch('jasmin.bin.jasmind.JCliConfig', return_value=SimpleNamespace(
+                    authentication=True, admin_username='operator',
+                    admin_password=md5(b'unique-test-password').digest())), \
                 patch('jasmin.bin.jasmind.SMPPClientPBConfig', return_value=fake_config), \
                 patch('jasmin.bin.jasmind.SMPPClientManagerPB', return_value=manager), \
                 patch('jasmin.bin.jasmind.reactor.listenTCP',
@@ -91,6 +131,9 @@ class C2BootstrapTests(unittest.TestCase):
             daemon = JasminDaemon({'config': 'unused'})
         self.factory.side_effect = RuntimeError('unavailable')
         with patch.dict(os.environ, self.config(), clear=True), \
+                patch('jasmin.bin.jasmind.JCliConfig', return_value=SimpleNamespace(
+                    authentication=True, admin_username='operator',
+                    admin_password=md5(b'unique-test-password').digest())), \
                 patch('jasmin.bin.jasmind.reactor.listenTCP') as listen:
             with self.assertRaises(C2BootstrapError):
                 daemon.startSMPPClientManagerPBService()
@@ -103,6 +146,9 @@ class C2BootstrapTests(unittest.TestCase):
         self.factory.side_effect = RuntimeError('unavailable')
         failures = []
         with patch.dict(os.environ, self.config(), clear=True), \
+                patch('jasmin.bin.jasmind.JCliConfig', return_value=SimpleNamespace(
+                    authentication=True, admin_username='operator',
+                    admin_password=md5(b'unique-test-password').digest())), \
                 patch.object(daemon, 'startRedisClient') as redis, \
                 patch.object(daemon, 'startAMQPBrokerService') as amqp, \
                 patch.object(daemon, 'startRouterPBService') as router:
