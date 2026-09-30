@@ -11,5 +11,6 @@
 9. Read the effective AMQP configuration during C2 preflight and reject the shipped `guest` identity. Prove the old daemon path accepted it, then run local C2 and packaged image tests with both default and synthetic broker identities before pushing.
 10. Exercise the C2 reader preflight against a real disposable PostgreSQL 18 database with an extra Test Hub table grant, then close the allowlist over table, column and sequence privileges and repeat grant/revoke negative checks.
 11. Exercise a non-inherited membership that can later `SET ROLE` into route access and a privileged login already switched to the reader. Reject both in the reader preflight and repeat the normal disposable PostgreSQL C2 flow.
+12. Add an isolated PostgreSQL 18 fixture to `c2-contract` so the table, column, sequence and role-switch negatives run on each PR head without target credentials or a second repository checkout. Pin the container image and verify cleanup.
 
 This plan does not select a target, publish to a registry or authorize deployment.

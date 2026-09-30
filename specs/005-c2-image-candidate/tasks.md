@@ -12,5 +12,6 @@
 - [x] T010 Reject effective AMQP `guest`/blank identity in C2 startup before authority or listeners; focused daemon test red before wiring, green local 88/88 and packaged AMD64 83/83 with separate default-broker and sovereign-authority negative paths.
 - [x] T011 Reject an overprivileged sovereign C2 reader on a newly added `testhub` relation: disposable PostgreSQL 18.6 red grant test, then green table/column/sequence grant/revoke negatives and normal cross-repo C2 flow; local C2 88/88.
 - [x] T012 Reject a C2 reader login with any PostgreSQL role membership and reject `current_user != session_user`: a disposable PostgreSQL 18.6 `NOINHERIT` membership had a working `SET ROLE` route-read path and passed old preflight (red); corrected preflight denies it and privileged-login role switching while retaining normal cross-repo C2 behavior.
+- [x] T013 Run a self-contained PostgreSQL 18 reader-preflight fixture in the `c2-contract` workflow with exact grant/revoke and role-switch negatives, using a pinned disposable container on loopback. Local fixture and workflow lint passed; official exact-head CI receipt is recorded separately after push.
 
 Target image selection, sovereign transfer/deployment and C2 release remain open.
