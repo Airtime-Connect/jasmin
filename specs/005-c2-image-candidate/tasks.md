@@ -6,5 +6,6 @@
 - [x] T004 Verify local AMD64 build, C2 import, excluded paths, archive hash and image ID round trip; lint the workflow.
 - [ ] T005 Record exact-head official CI and artifact digest after the draft push.
 - [x] T006 Reject shipped or disabled jCLI authentication before a C2 listener opens; prove the negative path with synthetic tests.
+- [x] T007 Reject shipped/disabled authentication on enabled router, SMPP manager/server and interceptor PB management surfaces, including the entrypoint's separate interceptor process.
 
 Target image selection, sovereign transfer/deployment and C2 release remain open.

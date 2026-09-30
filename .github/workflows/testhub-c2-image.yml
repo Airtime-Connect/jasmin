@@ -38,6 +38,9 @@ jobs:
           docker run --rm --network none --platform linux/amd64 \
             --entrypoint python testhub-c2-image:ci \
             /build/ci/run_testhub_c2.py
+          docker run --rm --network none --platform linux/amd64 \
+            --entrypoint python testhub-c2-image:ci \
+            /build/ci/check_testhub_c2_image_management.py
       - name: Seal and reload the exact candidate image
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
