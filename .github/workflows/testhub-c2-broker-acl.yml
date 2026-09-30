@@ -1,0 +1,26 @@
+name: Test Hub C2 broker ACL
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/testhub-c2-broker-acl.yml'
+      - 'scripts/testhub/c2_broker_acl_probe.py'
+      - 'scripts/testhub/run-c2-broker-acl.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  c2-broker-acl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install isolated AMQP probe client
+        run: python -m pip install 'pika==1.4.4'
+      - name: Prove protected routing denial on a disposable broker
+        run: ATC_C2_BROKER_PYTHON=python bash scripts/testhub/run-c2-broker-acl.sh

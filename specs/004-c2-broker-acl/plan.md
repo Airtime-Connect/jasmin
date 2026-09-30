@@ -1,0 +1,3 @@
+# Plan
+
+Base on Jasmin #9. Use the existing Docker engine only for an ephemeral, pinned RabbitMQ 3.13 image. Configure a synthetic internal user, a write-only publisher without topic permissions, and a publisher with a narrow topic allowlist. Publish through AMQP 0-9-1 using `pika` and assert both message delivery and channel 403. Gate startup on the RabbitMQ application's readiness before invoking `rabbitmqctl`; wait for the server-owned Erlang cookie before any diagnostics to avoid a local startup race. Bind only to loopback, remove the container in a trap, add a PR-only workflow and document the target owner receipts. Keep generated Spec Kit integration local and commit only task files.
