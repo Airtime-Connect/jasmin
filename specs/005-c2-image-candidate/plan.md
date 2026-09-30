@@ -7,5 +7,6 @@
 5. After review found shipped jCLI defaults, add a C2-only daemon startup check against disabled/default jCLI authentication and exercise its negative path without a broker, vault or network listener.
 6. Audit the image entrypoint's separate interceptor process and all enabled main-daemon PB management listeners; extend the C2 preflight to reject disabled/shipped authentication before those processes listen.
 7. Run the same C2 authority/config validation in the Docker entrypoint before launching the interceptor, then let `jasmind` revalidate after startup. Prove a failing preflight never reaches the child-start marker and suppresses exception details.
+8. Reject malformed, empty and cross-surface shipped management credentials in the shared C2 preflight; reproduce the unsafe acceptance with a focused red test, then prove all five surfaces and the pre-listener path fail closed.
 
 This plan does not select a target, publish to a registry or authorize deployment.

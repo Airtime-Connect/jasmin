@@ -8,5 +8,6 @@
 - [x] T006 Reject shipped or disabled jCLI authentication before a C2 listener opens; prove the negative path with synthetic tests.
 - [x] T007 Reject shipped/disabled authentication on enabled router, SMPP manager/server and interceptor PB management surfaces, including the entrypoint's separate interceptor process.
 - [x] T008 Validate C2 authority in the Docker entrypoint before interceptor launch, with a fail-closed, redacted negative-path check.
+- [x] T009 Reject blank/malformed and cross-surface shipped management credentials for all five C2 management checks before authority or listener startup; focused red 33 failures, green local 86/86 C2 tests.
 
 Target image selection, sovereign transfer/deployment and C2 release remain open.

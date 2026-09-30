@@ -73,18 +73,21 @@ class C2BootstrapTests(unittest.TestCase):
                 require_nondefault_jcli_auth(unsafe)
 
     def test_c2_jcli_auth_fails_before_authority_or_listener(self):
-        with patch('jasmin.bin.os.makedirs'):
-            daemon = JasminDaemon({'config': 'unused'})
-        defaults = SimpleNamespace(authentication=True, admin_username='jcliadmin',
-                                   admin_password=md5(b'jclipwd').digest())
-        with patch.dict(os.environ, self.config(), clear=True), \
-                self.safe_management_patches(), \
-                patch('jasmin.bin.jasmind.JCliConfig', return_value=defaults), \
-                patch('jasmin.bin.jasmind.reactor.listenTCP') as listen:
-            with self.assertRaises(C2BootstrapError):
-                daemon.startSMPPClientManagerPBService()
+        for unsafe in (
+                SimpleNamespace(authentication=True, admin_username='jcliadmin',
+                                admin_password=md5(b'jclipwd').digest()),
+                SimpleNamespace(authentication=True, admin_username='operator',
+                                admin_password=b'')):
+            with patch('jasmin.bin.os.makedirs'):
+                daemon = JasminDaemon({'config': 'unused'})
+            with patch.dict(os.environ, self.config(), clear=True), \
+                    self.safe_management_patches(), \
+                    patch('jasmin.bin.jasmind.JCliConfig', return_value=unsafe), \
+                    patch('jasmin.bin.jasmind.reactor.listenTCP') as listen:
+                with self.assertRaises(C2BootstrapError):
+                    daemon.startSMPPClientManagerPBService()
+                listen.assert_not_called()
         self.factory.assert_not_called()
-        listen.assert_not_called()
 
     def test_disabled_jcli_does_not_require_console_credentials(self):
         with patch('jasmin.bin.os.makedirs'):
@@ -126,6 +129,25 @@ class C2BootstrapTests(unittest.TestCase):
                                     admin_password=bytes.fromhex(digest))):
                 with self.assertRaises(C2BootstrapError):
                     check(unsafe)
+
+    def test_c2_management_auth_rejects_empty_and_cross_surface_defaults(self):
+        checks = (require_nondefault_jcli_auth, require_nondefault_interceptor_auth,
+                  require_nondefault_router_auth, require_nondefault_smppcm_auth,
+                  require_nondefault_smpps_auth)
+        known_other_default = md5(b'jclipwd').digest()
+        for check in checks:
+            for username, digest in (
+                    ('', md5(b'unique-test-password').digest()),
+                    (' operator ', md5(b'unique-test-password').digest()),
+                    ('operator', b''),
+                    ('operator', b'bad'),
+                    ('operator', md5(b'').digest()),
+                    ('operator', known_other_default),
+                    ('iadmin', md5(b'unique-test-password').digest())):
+                with self.subTest(check=check.__name__, username=username, digest=digest.hex()):
+                    with self.assertRaises(C2BootstrapError):
+                        check(SimpleNamespace(authentication=True, admin_username=username,
+                                              admin_password=digest))
 
     def test_interceptor_process_rejects_defaults_before_listener(self):
         defaults = SimpleNamespace(authentication=True, admin_username='iadmin',

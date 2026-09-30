@@ -15,10 +15,27 @@ class C2BootstrapError(RuntimeError):
     """The requested C2 guard is not ready; the daemon must not start."""
 
 
+_SHIPPED_MANAGEMENT_USERS = frozenset((
+    'jcliadmin', 'iadmin', 'radmin', 'cmadmin', 'smppsadmin',
+))
+_SHIPPED_MANAGEMENT_DIGESTS = frozenset((
+    md5(b'jclipwd').digest(),
+    md5(b'ipwd').digest(),
+    bytes.fromhex('82a606ca5a0deea2b5777756788af5c8'),
+    bytes.fromhex('e1c5136acafb7016bc965597c992eb82'),
+    bytes.fromhex('e97ab122faa16beea8682d84f3d2eea4'),
+    md5(b'').digest(),
+))
+
+
 def _require_nondefault_management_auth(config, default_user, default_digest, endpoint):
-    if (not config.authentication
-            or config.admin_username == default_user
-            or config.admin_password == default_digest):
+    username = config.admin_username
+    digest = config.admin_password
+    if (config.authentication is not True
+            or not isinstance(username, str) or not username or username != username.strip()
+            or username == default_user or username in _SHIPPED_MANAGEMENT_USERS
+            or not isinstance(digest, bytes) or len(digest) != 16
+            or digest == default_digest or digest in _SHIPPED_MANAGEMENT_DIGESTS):
         raise C2BootstrapError('C2 %s management authentication is unsafe' % endpoint)
 
 
