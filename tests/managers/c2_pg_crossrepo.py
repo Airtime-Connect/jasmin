@@ -13,7 +13,7 @@ import psycopg
 
 from jasmin.managers.testhub_c2 import C2Denied, TestHubC2Runtime
 from jasmin.managers.testhub_c2_pg import PostgresC2Authority
-from jasmin.managers.testhub_c2_sovereign import _preflight
+from jasmin.managers.testhub_c2_sovereign import C2SovereignError, _preflight
 
 
 DATABASE = 'testhub_c2_crossrepo'
@@ -50,6 +50,38 @@ def runtime(authority):
 def run_live(socket):
     factory = lambda: connect(socket, 'testhub_c2_reader')
     _preflight(factory)
+    # The reader must not silently gain access to a newly granted Test Hub
+    # table merely because that table is not in a short deny list.
+    with connect(socket, 'testhub_admin') as connection:
+        connection.execute('CREATE TABLE testhub.synthetic_extra_authority (id integer)')
+        connection.execute('CREATE SEQUENCE testhub.synthetic_extra_sequence')
+    try:
+        grants = (
+            ('GRANT SELECT ON testhub.synthetic_extra_authority TO testhub_c2_reader',
+             'REVOKE SELECT ON testhub.synthetic_extra_authority FROM testhub_c2_reader'),
+            ('GRANT SELECT(id) ON testhub.synthetic_extra_authority TO testhub_c2_reader',
+             'REVOKE SELECT(id) ON testhub.synthetic_extra_authority FROM testhub_c2_reader'),
+            ('GRANT USAGE ON SEQUENCE testhub.synthetic_extra_sequence TO testhub_c2_reader',
+             'REVOKE USAGE ON SEQUENCE testhub.synthetic_extra_sequence FROM testhub_c2_reader'),
+        )
+        for grant, revoke in grants:
+            with connect(socket, 'testhub_admin') as connection:
+                connection.execute(grant)
+            try:
+                try:
+                    _preflight(factory)
+                except C2SovereignError:
+                    pass
+                else:
+                    raise AssertionError('reader with unrelated Test Hub grant passed preflight')
+            finally:
+                with connect(socket, 'testhub_admin') as connection:
+                    connection.execute(revoke)
+            _preflight(factory)
+    finally:
+        with connect(socket, 'testhub_admin') as connection:
+            connection.execute('DROP TABLE testhub.synthetic_extra_authority')
+            connection.execute('DROP SEQUENCE testhub.synthetic_extra_sequence')
     authority = PostgresC2Authority(factory)
     assert authority.list_reserved_pairs() == PAIRS
     assert authority.is_test_uid('synthetic-uid-tenant-b')

@@ -24,8 +24,9 @@ RESERVED_SECRET = 'testhub-c2-reserved-identifiers-json'
 SAFE_DOMAIN = re.compile(r'^(?!.*\.\.)(?!\.)([A-Za-z0-9][A-Za-z0-9._-]*)$')
 
 # A cross-tenant classifier must see all reserved UIDs/CIDs. This query also
-# rejects mutation privileges on the three tables it reads. RLS completeness
-# still requires a separate DB-side attestation before deployment.
+# rejects writes on its three authority relations and any grant on other
+# Test Hub relations or sequences. RLS completeness still requires a separate
+# DB-side attestation before deployment.
 ROLE_PREFLIGHT = '''
 SELECT NOT r.rolsuper AND NOT r.rolbypassrls
  AND has_table_privilege(current_user, 'testhub.c2_principals', 'SELECT')
@@ -47,6 +48,23 @@ SELECT NOT r.rolsuper AND NOT r.rolbypassrls
    SELECT 1 FROM pg_class c
    WHERE c.oid IN ('testhub.c2_principals'::regclass, 'testhub.c2_leases'::regclass)
      AND c.relrowsecurity
+ )
+ AND NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'testhub'
+     AND c.relkind IN ('r', 'p', 'v', 'm', 'f')
+     AND c.relname NOT IN ('c2_principals', 'c2_leases', 'airtime_connectors')
+     AND (has_table_privilege(current_user, c.oid,
+                             'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+          OR has_any_column_privilege(current_user, c.oid,
+                                      'SELECT,INSERT,UPDATE,REFERENCES'))
+ )
+ AND NOT EXISTS (
+   SELECT 1 FROM pg_class c
+   JOIN pg_namespace n ON n.oid = c.relnamespace
+   WHERE n.nspname = 'testhub' AND c.relkind = 'S'
+     AND has_sequence_privilege(current_user, c.oid, 'USAGE,SELECT,UPDATE')
  )
 FROM pg_roles r WHERE r.rolname = current_user
 '''

@@ -10,5 +10,6 @@
 - [x] T008 Validate C2 authority in the Docker entrypoint before interceptor launch, with a fail-closed, redacted negative-path check.
 - [x] T009 Reject blank/malformed and cross-surface shipped management credentials for all five C2 management checks before authority or listener startup; focused red 33 failures, green local 86/86 C2 tests.
 - [x] T010 Reject effective AMQP `guest`/blank identity in C2 startup before authority or listeners; focused daemon test red before wiring, green local 88/88 and packaged AMD64 83/83 with separate default-broker and sovereign-authority negative paths.
+- [x] T011 Reject an overprivileged sovereign C2 reader on a newly added `testhub` relation: disposable PostgreSQL 18.6 red grant test, then green table/column/sequence grant/revoke negatives and normal cross-repo C2 flow; local C2 88/88.
 
 Target image selection, sovereign transfer/deployment and C2 release remain open.
