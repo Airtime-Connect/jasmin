@@ -10,6 +10,15 @@ sed -i "/\[amqp-broker\]/,/port=/  s/port=.*/port=$AMQP_BROKER_PORT/" ${CONFIG_P
 echo 'Cleaning lock files'
 rm -f /tmp/*.lock
 
+if [ "${JASMIN_TESTHUB_C2_REQUIRED:-0}" != 0 ] || [ -n "${JASMIN_TESTHUB_C2_FACTORY:-}" ]; then
+  case "$1" in
+    jasmind.py|*/jasmind.py) ;;
+    *) echo 'C2 startup requires jasmind.py' >&2; exit 1 ;;
+  esac
+  # The main daemon repeats this check with its own authority instance.
+  python -m jasmin.managers.testhub_c2_entrypoint_preflight "${@:2}"
+fi
+
 
 if [ "$2" = "--enable-interceptor-client" ]; then
   echo 'Starting interceptord'
