@@ -110,8 +110,16 @@ def _preflight(connection_factory):
 
 def _reserved_identifiers(raw):
     """Exact, independently inventoried Jasmin IDs; never infer from a prefix."""
+    def unique_object(items):
+        document = {}
+        for key, value in items:
+            if key in document:
+                raise ValueError('duplicate JSON property')
+            document[key] = value
+        return document
+
     try:
-        document = json.loads(raw)
+        document = json.loads(raw, object_pairs_hook=unique_object)
         if type(document) is not dict or set(document) != {'principals'}:
             raise ValueError()
         pairs = document['principals']
@@ -127,6 +135,8 @@ def _reserved_identifiers(raw):
                     or len(uid) > 256 or len(cid) > 256
                     or uid in uids or cid in cids):
                 raise ValueError()
+            uid.encode('utf-8')
+            cid.encode('utf-8')
             uids.add(uid)
             cids.add(cid)
         return tuple((pair['uid'], pair['cid']) for pair in pairs), frozenset(uids), frozenset(cids)
@@ -159,6 +169,8 @@ def _build(environ, read_secret, connect):
     authority = PostgresC2Authority(connection_factory)
     pairs, reserved_uids, reserved_cids = _reserved_identifiers(raw_reserved)
     try:
+        if authority.list_reserved_pairs() != frozenset(pairs):
+            raise ValueError()
         for uid, cid in pairs:
             scope = authority.get_scope(uid)
             if scope is None or scope.cid != cid:

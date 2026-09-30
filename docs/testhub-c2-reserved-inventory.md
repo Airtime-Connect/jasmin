@@ -15,7 +15,11 @@ of Jasmin identities and the control-plane reservation process. No prefix,
 client field, or live message metadata can establish protected status.
 
 Startup rejects a missing, empty, malformed, duplicate, or mismatched inventory.
-Each pair must have a matching registry row at startup, even if disabled. At
+Duplicate JSON property names and invalid Unicode identifiers fail parsing. The
+dedicated reader retrieves all `testhub.c2_principals` UID/CID pairs in one
+fresh query; that set must equal the vault inventory exactly. An extra registry
+pair or an extra inventory pair stops startup. Each pair must also have a
+matching joined scope row at startup, even if disabled. At
 runtime, an inventoried UID or CID remains protected if its registry row is
 removed: enqueue and egress then deny because scope/lease authority is absent.
 Unlisted identifiers still use the fresh PostgreSQL classifier, so ordinary
@@ -23,7 +27,10 @@ commercial traffic is not classified by a broad prefix or a general Airtime
 connector flag. A registry outage also denies commercial classification while
 C2 is enabled; this is the existing fail-closed behavior.
 
-This code does not establish inventory completeness. Before enabling C2, the
+The startup query checks registry/vault parity at one instant; it does not
+establish completeness against Jasmin's active and reserved identity universe,
+nor protect an unlisted new pair after its registry row is later deleted.
+Before enabling C2, the
 owner must reconcile all dedicated and reserved Jasmin IDs, registry rows and
 the vault inventory on the target deployment, verify the effective reader role
 and broker ACLs, and keep provisioning/rotation atomic. A newly reserved pair

@@ -46,6 +46,43 @@ class PostgresC2Authority:
         row = self._one('SELECT 1 FROM testhub.c2_principals WHERE uid = %s', uid)
         return row is not None
 
+    def list_reserved_pairs(self):
+        """Read the complete C2 registry in one fresh statement for startup parity."""
+        connection = None
+        cursor = None
+        cleanup_failed = False
+        try:
+            connection = self.connection_factory()
+            cursor = connection.cursor()
+            cursor.execute('SELECT uid, cid FROM testhub.c2_principals ORDER BY uid LIMIT 4097')
+            rows = cursor.fetchall()
+            if type(rows) not in (list, tuple) or len(rows) > 4096:
+                raise ValueError('invalid C2 registry result')
+            pairs = set()
+            for row in rows:
+                if (type(row) is not tuple or len(row) != 2
+                        or any(type(value) is not str or not value
+                               or value != value.strip() for value in row)
+                        or row in pairs):
+                    raise ValueError('invalid C2 registry pair')
+                pairs.add(row)
+        except Exception:
+            raise C2Denied('C2 registry or lease store unavailable') from None
+        finally:
+            if cursor is not None:
+                try:
+                    cursor.close()
+                except Exception:
+                    cleanup_failed = True
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    cleanup_failed = True
+        if cleanup_failed:
+            raise C2Denied('C2 registry or lease store unavailable') from None
+        return frozenset(pairs)
+
     def is_test_cid(self, cid):
         if not isinstance(cid, str) or not cid:
             raise C2Denied('invalid CID')

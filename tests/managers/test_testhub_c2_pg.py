@@ -17,6 +17,7 @@ class FakeStore:
         self.down = False
         self.commercial = False
         self.fail_close = False
+        self.registry_pairs = [('test-uid', 'test-cid')]
         self.calls = []
 
     def connect(self):
@@ -44,8 +45,10 @@ class FakeCursor:
         self.store = store
         self.row = None
 
-    def execute(self, sql, args):
+    def execute(self, sql, args=None):
         self.store.calls.append((sql, args))
+        if sql.startswith('SELECT uid, cid FROM testhub.c2_principals'):
+            return
         assert len(args) == 1 and '%s' in sql
         if 'FROM testhub.c2_leases' in sql:
             self.row = self.store.lease if args[0] == 'test-uid' else None
@@ -60,6 +63,9 @@ class FakeCursor:
 
     def fetchone(self):
         return self.row
+
+    def fetchall(self):
+        return self.store.registry_pairs
 
     def close(self):
         if self.store.fail_close:
@@ -117,6 +123,23 @@ class PostgresC2AuthorityTests(unittest.TestCase):
         self.store.uid = (*self.store.uid[:-1], False)
         self.assertFalse(self.guard.remote_pb_submit_allowed('test-uid', 'commercial-cid'))
         self.assertFalse(self.guard.remote_pb_submit_allowed('commercial-uid', 'test-cid'))
+
+    def test_registry_pair_snapshot_reads_every_dedicated_identity(self):
+        self.store.registry_pairs.append(('second-uid', 'second-cid'))
+        self.assertEqual(self.authority.list_reserved_pairs(), frozenset(self.store.registry_pairs))
+        self.assertEqual(self.store.calls[-1],
+                         ('SELECT uid, cid FROM testhub.c2_principals ORDER BY uid LIMIT 4097', None))
+
+    def test_registry_pair_snapshot_rejects_ambiguous_rows_and_cleanup_failure(self):
+        for rows in ([('test-uid', 'test-cid'), ('test-uid', 'test-cid')],
+                     [('bad-uid', None)], [(' bad-uid', 'test-cid')]):
+            self.store.registry_pairs = rows
+            with self.subTest(rows=rows), self.assertRaises(C2Denied):
+                self.authority.list_reserved_pairs()
+        self.store.registry_pairs = [('test-uid', 'test-cid')]
+        self.store.fail_close = True
+        with self.assertRaisesRegex(C2Denied, '^C2 registry or lease store unavailable$'):
+            self.authority.list_reserved_pairs()
 
     def test_queries_bind_values_instead_of_interpolating(self):
         suspicious = "test-uid' OR TRUE --"

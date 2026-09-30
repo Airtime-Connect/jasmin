@@ -30,6 +30,7 @@ class FakeCursor:
         self.queries = []
         self.scope_row = ('reserved-uid', '11111111-1111-1111-1111-111111111111',
                           'reserved-cid', True)
+        self.registry_pairs = [('reserved-uid', 'reserved-cid')]
 
     def execute(self, query, args=None):
         self.queries.append((query, args))
@@ -43,6 +44,9 @@ class FakeCursor:
         if 'SELECT 1 FROM testhub.c2_principals' in query:
             return None
         return self.row
+
+    def fetchall(self):
+        return self.registry_pairs
 
     def close(self):
         if self.fail_close:
@@ -115,7 +119,7 @@ class SovereignFactoryTests(unittest.TestCase):
         self.read_secret.assert_any_call(DOMAIN, DB_SECRET)
         self.read_secret.assert_any_call(DOMAIN, KEY_SECRET)
         self.read_secret.assert_any_call(DOMAIN, RESERVED_SECRET)
-        self.assertEqual(self.connect.call_count, 2)
+        self.assertEqual(self.connect.call_count, 3)
         self.assertEqual(self.connection.fake_cursor.queries[0], (ROLE_PREFLIGHT, None))
         self.assertTrue(self.connection.closed)
 
@@ -144,6 +148,26 @@ class SovereignFactoryTests(unittest.TestCase):
             self.connection.fake_cursor.scope_row = scope
             with self.subTest(scope=scope), self.assertRaisesRegex(
                     C2SovereignError, '^C2 reserved identifier reconciliation failed$'):
+                self.build()
+
+    def test_registry_only_pair_denies_startup(self):
+        self.connection.fake_cursor.registry_pairs.append(('unlisted-uid', 'unlisted-cid'))
+        with self.assertRaisesRegex(
+                C2SovereignError, '^C2 reserved identifier reconciliation failed$'):
+            self.build()
+
+    def test_inventory_duplicate_json_keys_and_invalid_unicode_deny_startup(self):
+        documents = (
+            b'{"principals":[{"uid":"reserved-uid","cid":"reserved-cid"}],'
+            b'"principals":[{"uid":"reserved-uid","cid":"reserved-cid"}]}',
+            b'{"principals":[{"uid":"shadow-uid","uid":"reserved-uid",'
+            b'"cid":"reserved-cid"}]}',
+            b'{"principals":[{"uid":"\\ud800","cid":"reserved-cid"}]}',
+        )
+        for document in documents:
+            self.values[RESERVED_SECRET] = document
+            with self.subTest(document=document), self.assertRaisesRegex(
+                    C2SovereignError, '^C2 reserved identifier inventory invalid$'):
                 self.build()
 
     def test_inventory_malformed_or_duplicate_fails_startup(self):
