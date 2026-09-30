@@ -16,7 +16,13 @@ port="$(docker port "$container" 5432/tcp | sed -n 's/^127\.0\.0\.1://p')"
 [[ "$port" =~ ^[0-9]+$ ]] || { echo 'disposable PostgreSQL port unavailable' >&2; exit 2; }
 ready=0
 for _ in {1..30}; do
-  if docker exec "$container" pg_isready -U testhub_admin -d testhub_c2_ci >/dev/null 2>&1; then
+  if ATC_C2_ROLE_PG_PORT="$port" "$PYTHON_BIN" -c '
+import os
+import psycopg
+with psycopg.connect(host="127.0.0.1", port=int(os.environ["ATC_C2_ROLE_PG_PORT"]),
+                     dbname="testhub_c2_ci", user="testhub_admin", connect_timeout=2):
+    pass
+' >/dev/null 2>&1; then
     ready=1
     break
   fi

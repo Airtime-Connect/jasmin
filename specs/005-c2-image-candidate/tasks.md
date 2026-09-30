@@ -14,5 +14,6 @@
 - [x] T012 Reject a C2 reader login with any PostgreSQL role membership and reject `current_user != session_user`: a disposable PostgreSQL 18.6 `NOINHERIT` membership had a working `SET ROLE` route-read path and passed old preflight (red); corrected preflight denies it and privileged-login role switching while retaining normal cross-repo C2 behavior.
 - [x] T013 Run a self-contained PostgreSQL 18 reader-preflight fixture in the `c2-contract` workflow with exact grant/revoke and role-switch negatives, using a pinned disposable container on loopback. Local fixture and workflow lint passed; official exact-head CI receipt is recorded separately after push.
 - [x] T014 Pin `c2-contract` checkout to the PR head and assert `git rev-parse HEAD` equals that SHA before installing dependencies or running PostgreSQL; the default PR merge-ref checkout did not bind previous contract jobs to exact source bytes.
+- [x] T015 Wait for a successful connection through the ephemeral host port before running the PostgreSQL fixture. The first exact-head CI run failed because an in-container socket `pg_isready` returned true while host-port forwarding still closed the connection; the new readiness probe uses the same host/port/client path as the test.
 
 Target image selection, sovereign transfer/deployment and C2 release remain open.
