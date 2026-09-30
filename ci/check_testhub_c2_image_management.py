@@ -3,6 +3,7 @@
 import os
 import subprocess
 from hashlib import md5
+from unittest.mock import patch
 
 from jasmin.bin.interceptord import InterceptorDaemon
 from jasmin.bin.jasmind import JasminDaemon
@@ -35,6 +36,30 @@ def main():
     for section in ('ROUTER', 'CLIENT_MANAGEMENT', 'SMPP_SERVER_PB', 'JCLI', 'INTERCEPTOR'):
         environment['%s_ADMIN_USERNAME' % section] = 'synthetic-ci-admin'
         environment['%s_ADMIN_PASSWORD' % section] = digest
+    with patch.dict(os.environ, environment, clear=True):
+        try:
+            JasminDaemon({'config': '/etc/jasmin/jasmin.cfg',
+                          'enable-interceptor-client': True}).configureTestHubC2()
+        except C2BootstrapError as exc:
+            if str(exc) != 'C2 AMQP broker authentication is unsafe':
+                raise AssertionError('packaged default broker identity was not the rejected gate')
+        else:
+            raise AssertionError('packaged default broker identity was accepted')
+    print('packaged default AMQP identity rejected PASS')
+
+    environment['AMQP_BROKER_USERNAME'] = 'synthetic-ci-broker'
+    environment['AMQP_BROKER_PASSWORD'] = 'synthetic-ci-password'
+    with patch.dict(os.environ, environment, clear=True):
+        try:
+            JasminDaemon({'config': '/etc/jasmin/jasmin.cfg',
+                          'enable-interceptor-client': True}).configureTestHubC2()
+        except C2BootstrapError as exc:
+            if str(exc) != 'C2 authority initialization failed':
+                raise AssertionError('synthetic broker config did not reach sovereign factory')
+        else:
+            raise AssertionError('empty vault domain was accepted')
+    print('synthetic AMQP identity reaches sovereign authority PASS')
+
     result = subprocess.run(
         ['/docker-entrypoint.sh', 'jasmind.py', '--enable-interceptor-client',
          '--enable-dlr-thrower', '--enable-dlr-lookup', '-u', 'jcliadmin',

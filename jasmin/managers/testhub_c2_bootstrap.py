@@ -64,6 +64,16 @@ def require_nondefault_smpps_auth(config):
         config, 'smppsadmin', bytes.fromhex('e97ab122faa16beea8682d84f3d2eea4'), 'SMPP server PB')
 
 
+def require_nondefault_amqp_auth(config):
+    """The shipped broker identity cannot protect the C2 submit queues."""
+    username = config.username
+    password = config.password
+    if (not isinstance(username, str) or not username or username != username.strip()
+            or not isinstance(password, str) or not password or password != password.strip()
+            or username == 'guest' or password == 'guest'):
+        raise C2BootstrapError('C2 AMQP broker authentication is unsafe')
+
+
 def load_testhub_c2_guard(environ=None):
     environ = os.environ if environ is None else environ
     required = environ.get('JASMIN_TESTHUB_C2_REQUIRED', '0')

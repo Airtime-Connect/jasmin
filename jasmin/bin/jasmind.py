@@ -20,7 +20,7 @@ from jasmin.managers.clients import SMPPClientManagerPB
 from jasmin.managers.testhub_c2_bootstrap import (
     load_testhub_c2_guard, require_nondefault_jcli_auth, require_nondefault_interceptor_auth,
     require_nondefault_router_auth, require_nondefault_smppcm_auth,
-    require_nondefault_smpps_auth)
+    require_nondefault_smpps_auth, require_nondefault_amqp_auth)
 from jasmin.managers.configs import SMPPClientPBConfig, DLRLookupConfig
 from jasmin.managers.dlr import DLRLookup
 from jasmin.protocols.cli.configs import JCliConfig
@@ -99,6 +99,7 @@ class JasminDaemon(BaseDaemon):
                 if self.options.get('enable-interceptor-client', False):
                     require_nondefault_interceptor_auth(
                         InterceptorPBConfig('%s/interceptor.cfg' % CONFIG_PATH))
+                require_nondefault_amqp_auth(AmqpConfig(config_file))
             self._testhub_c2_guard = load_testhub_c2_guard()
             self._testhub_c2_configured = True
         return self._testhub_c2_guard

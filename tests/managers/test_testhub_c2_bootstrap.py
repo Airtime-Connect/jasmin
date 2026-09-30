@@ -15,7 +15,8 @@ from jasmin.managers.testhub_c2 import TestHubC2Runtime
 from jasmin.managers.testhub_c2_bootstrap import (
     C2BootstrapError, load_testhub_c2_guard, require_nondefault_jcli_auth,
     require_nondefault_interceptor_auth, require_nondefault_router_auth,
-    require_nondefault_smppcm_auth, require_nondefault_smpps_auth)
+    require_nondefault_smppcm_auth, require_nondefault_smpps_auth,
+    require_nondefault_amqp_auth)
 
 
 class C2BootstrapTests(unittest.TestCase):
@@ -46,6 +47,8 @@ class C2BootstrapTests(unittest.TestCase):
         stack.enter_context(patch('jasmin.bin.jasmind.SMPPClientPBConfig',
                                   side_effect=[safe, client_config] if client_config else None,
                                   return_value=safe))
+        stack.enter_context(patch('jasmin.bin.jasmind.AmqpConfig', return_value=SimpleNamespace(
+            username='isolated-c2', password='synthetic-password')))
         return stack
 
     def test_guard_loads_only_when_required(self):
@@ -148,6 +151,31 @@ class C2BootstrapTests(unittest.TestCase):
                     with self.assertRaises(C2BootstrapError):
                         check(SimpleNamespace(authentication=True, admin_username=username,
                                               admin_password=digest))
+
+    def test_c2_amqp_auth_rejects_shipped_and_empty_identity(self):
+        require_nondefault_amqp_auth(SimpleNamespace(username='isolated-c2', password='synthetic-password'))
+        for username, password in (('guest', 'guest'), ('guest', 'synthetic-password'),
+                                   ('isolated-c2', 'guest'), ('', 'synthetic-password'),
+                                   ('isolated-c2', ''), (' isolated-c2 ', 'synthetic-password')):
+            with self.subTest(username=username):
+                with self.assertRaises(C2BootstrapError):
+                    require_nondefault_amqp_auth(SimpleNamespace(username=username, password=password))
+
+    def test_c2_default_amqp_auth_fails_before_authority_or_listener(self):
+        with patch('jasmin.bin.os.makedirs'):
+            daemon = JasminDaemon({'config': 'unused'})
+        with patch.dict(os.environ, self.config(), clear=True), \
+                self.safe_management_patches(), \
+                patch('jasmin.bin.jasmind.JCliConfig', return_value=SimpleNamespace(
+                    authentication=True, admin_username='operator',
+                    admin_password=md5(b'unique-test-password').digest())), \
+                patch('jasmin.bin.jasmind.AmqpConfig', return_value=SimpleNamespace(
+                    username='guest', password='guest')), \
+                patch('jasmin.bin.jasmind.reactor.listenTCP') as listen:
+            with self.assertRaises(C2BootstrapError):
+                daemon.configureTestHubC2()
+        self.factory.assert_not_called()
+        listen.assert_not_called()
 
     def test_interceptor_process_rejects_defaults_before_listener(self):
         defaults = SimpleNamespace(authentication=True, admin_username='iadmin',

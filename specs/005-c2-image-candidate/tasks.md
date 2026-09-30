@@ -9,5 +9,6 @@
 - [x] T007 Reject shipped/disabled authentication on enabled router, SMPP manager/server and interceptor PB management surfaces, including the entrypoint's separate interceptor process.
 - [x] T008 Validate C2 authority in the Docker entrypoint before interceptor launch, with a fail-closed, redacted negative-path check.
 - [x] T009 Reject blank/malformed and cross-surface shipped management credentials for all five C2 management checks before authority or listener startup; focused red 33 failures, green local 86/86 C2 tests.
+- [x] T010 Reject effective AMQP `guest`/blank identity in C2 startup before authority or listeners; focused daemon test red before wiring, green local 88/88 and packaged AMD64 83/83 with separate default-broker and sovereign-authority negative paths.
 
 Target image selection, sovereign transfer/deployment and C2 release remain open.
