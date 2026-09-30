@@ -17,11 +17,27 @@ connector failover deny. A lookup never renews the lease.
 
 The daemon's PB portal now returns a distinct facade per login. When the guard
 is installed, remote PB `submit_sm` calls using a protected Test Hub UID or CID
-are denied before the shared manager is invoked. Other manager PB methods and
-ordinary commercial submissions continue to delegate. This removes the PB
-signing-oracle path for protected identities under complete registry lookup.
+are denied before the shared manager is invoked. Remote PB remove/start/stop
+of a reserved connector CID is also denied using the authoritative C2
+classifier; an ambiguous or failed lookup denies before manager mutation.
+Remote PB `connector_add`, `load` and `connector_stopall` are denied whenever
+C2 is active, because they can affect protected connectors without a safe
+CID bound at the facade. In particular, `connector_add` takes pickle bytes:
+unpickling merely to inspect the CID would execute untrusted input. Read-only
+manager methods, commercial CID-targeted remove/start/stop and ordinary
+commercial submissions continue to delegate. Legacy PB behavior remains when
+C2 is inactive. This removes the PB signing-oracle path for protected identities
+under complete registry lookup.
 The facade does not turn the client-supplied UID into authenticated identity;
 it excludes protected identities from that remote interface altogether.
+
+The C2-active PB management restriction is a release gate for operations:
+the broker/connector owner must identify a separate authenticated, audited
+provisioning path for add, profile load, bulk stop and protected connector
+changes, and prove that it cannot replace a reserved CID with a commercial
+upstream. This draft does not implement that operator path or assert target
+authorization. The in-process manager remains a trusted control-plane surface
+and requires its own target access review.
 
 The daemon now loads a trusted factory before it starts services and installs
 its `TestHubC2Runtime` on the manager before PB listens or any connector can

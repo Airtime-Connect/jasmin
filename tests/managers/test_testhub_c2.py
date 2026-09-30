@@ -173,6 +173,16 @@ class TestHubC2RuntimeTests(unittest.TestCase):
         self.assertFalse(self.guard.remote_pb_submit_allowed('commercial-uid', SCOPE.cid))
         self.assertTrue(self.guard.remote_pb_submit_allowed('commercial-uid', 'commercial-cid'))
 
+    def test_remote_pb_connector_mutation_uses_authoritative_cid_classifier(self):
+        self.assertFalse(self.guard.remote_pb_connector_mutation_allowed(SCOPE.cid))
+        self.assertTrue(self.guard.remote_pb_connector_mutation_allowed('commercial-cid'))
+        self.guard.is_test_cid = lambda cid: None
+        with self.assertRaises(C2Denied):
+            self.guard.remote_pb_connector_mutation_allowed('commercial-cid')
+        self.guard.is_test_cid = lambda cid: (_ for _ in ()).throw(ConnectionError('registry down'))
+        with self.assertRaises(C2Denied):
+            self.guard.remote_pb_connector_mutation_allowed('commercial-cid')
+
     def test_remote_pb_registry_error_denies(self):
         self.guard.is_test_uid = lambda uid: (_ for _ in ()).throw(ConnectionError('registry down'))
         with self.assertRaises(C2Denied):
