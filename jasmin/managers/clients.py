@@ -20,6 +20,14 @@ from .listeners import SMPPClientSMListener
 from .testhub_c2 import C2Denied
 
 LOG_CATEGORY = "jasmin-pb-client-mgmt"
+_C2_PB_RESTRICTED_CID_METHODS = frozenset((
+    'perspective_connector_remove', 'perspective_connector_start',
+    'perspective_connector_stop', 'perspective_connector_config',
+))
+_C2_PB_UNBOUNDED_MUTATORS = frozenset((
+    'perspective_connector_add', 'perspective_load',
+    'perspective_connector_stopall', 'perspective_persist',
+))
 
 
 class ConfigProfileLoadingError(Exception):
@@ -27,14 +35,35 @@ class ConfigProfileLoadingError(Exception):
 
 
 class SMPPClientManagerPBAvatar(pb.Avatar):
-    """Per-login PB facade: remote callers may not submit protected traffic."""
+    """Per-login PB facade: keep protected traffic and management off remote PB."""
 
     def __init__(self, manager):
         self.manager = manager
 
     def __getattr__(self, name):
         if name.startswith('perspective_') and name != 'perspective_submit_sm':
-            return getattr(self.manager, name)
+            method = getattr(self.manager, name)
+            if name in _C2_PB_RESTRICTED_CID_METHODS:
+                def guarded_cid_access(cid, *args, **kwargs):
+                    guard = self.manager.testhub_c2_guard
+                    if guard is not None:
+                        try:
+                            if not guard.remote_pb_connector_access_allowed(cid):
+                                self.manager.log.error('Test Hub C2 denied remote PB %s for cid:%s', name, cid)
+                                return False
+                        except C2Denied as exc:
+                            self.manager.log.error('Test Hub C2 denied remote PB connector access: %s', exc)
+                            return False
+                    return method(cid, *args, **kwargs)
+                return guarded_cid_access
+            if name in _C2_PB_UNBOUNDED_MUTATORS:
+                def guarded_unbounded_mutation(*args, **kwargs):
+                    if self.manager.testhub_c2_guard is not None:
+                        self.manager.log.error('Test Hub C2 denied unbounded remote PB %s', name)
+                        return False
+                    return method(*args, **kwargs)
+                return guarded_unbounded_mutation
+            return method
         raise AttributeError(name)
 
     def perspective_submit_sm(self, uid, cid, *args, **kwargs):
