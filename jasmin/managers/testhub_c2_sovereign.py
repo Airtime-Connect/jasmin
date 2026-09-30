@@ -25,10 +25,13 @@ SAFE_DOMAIN = re.compile(r'^(?!.*\.\.)(?!\.)([A-Za-z0-9][A-Za-z0-9._-]*)$')
 
 # A cross-tenant classifier must see all reserved UIDs/CIDs. This query also
 # rejects writes on its three authority relations and any grant on other
-# Test Hub relations or sequences. RLS completeness still requires a separate
-# DB-side attestation before deployment.
+# Test Hub relations or sequences. The login must be the effective role and
+# have no memberships, including NOINHERIT paths that can later SET ROLE.
+# RLS completeness still requires a separate DB-side attestation before deployment.
 ROLE_PREFLIGHT = '''
-SELECT NOT r.rolsuper AND NOT r.rolbypassrls
+SELECT current_user = session_user
+ AND NOT r.rolsuper AND NOT r.rolbypassrls
+ AND NOT EXISTS (SELECT 1 FROM pg_auth_members m WHERE m.member = r.oid)
  AND has_table_privilege(current_user, 'testhub.c2_principals', 'SELECT')
  AND has_table_privilege(current_user, 'testhub.c2_leases', 'SELECT')
  AND has_table_privilege(current_user, 'testhub.airtime_connectors', 'SELECT')

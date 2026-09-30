@@ -82,6 +82,45 @@ def run_live(socket):
         with connect(socket, 'testhub_admin') as connection:
             connection.execute('DROP TABLE testhub.synthetic_extra_authority')
             connection.execute('DROP SEQUENCE testhub.synthetic_extra_sequence')
+    # A NOINHERIT membership leaves effective SELECT narrow at preflight time,
+    # yet the login can later SET ROLE to obtain protected route access.
+    with connect(socket, 'testhub_admin') as connection:
+        connection.execute('CREATE ROLE testhub_c2_elevated NOLOGIN')
+        connection.execute('GRANT USAGE ON SCHEMA testhub TO testhub_c2_elevated')
+        connection.execute('GRANT SELECT ON testhub.routes TO testhub_c2_elevated')
+        connection.execute('GRANT testhub_c2_elevated TO testhub_c2_reader WITH INHERIT FALSE')
+    try:
+        with connect(socket, 'testhub_c2_reader') as connection:
+            assert connection.execute(
+                "SELECT has_table_privilege(current_user, 'testhub.routes', 'SELECT')"
+            ).fetchone() == (False,)
+            connection.execute('SET ROLE testhub_c2_elevated')
+            assert connection.execute(
+                "SELECT has_table_privilege(current_user, 'testhub.routes', 'SELECT')"
+            ).fetchone() == (True,)
+        try:
+            _preflight(factory)
+        except C2SovereignError:
+            pass
+        else:
+            raise AssertionError('reader with SET ROLE path passed preflight')
+    finally:
+        with connect(socket, 'testhub_admin') as connection:
+            connection.execute('REVOKE testhub_c2_elevated FROM testhub_c2_reader')
+            connection.execute('REVOKE SELECT ON testhub.routes FROM testhub_c2_elevated')
+            connection.execute('REVOKE USAGE ON SCHEMA testhub FROM testhub_c2_elevated')
+            connection.execute('DROP ROLE testhub_c2_elevated')
+    _preflight(factory)
+    def admin_set_role_reader():
+        connection = connect(socket, 'testhub_admin')
+        connection.execute('SET ROLE testhub_c2_reader')
+        return connection
+    try:
+        _preflight(admin_set_role_reader)
+    except C2SovereignError:
+        pass
+    else:
+        raise AssertionError('SET ROLE from privileged login passed preflight')
     authority = PostgresC2Authority(factory)
     assert authority.list_reserved_pairs() == PAIRS
     assert authority.is_test_uid('synthetic-uid-tenant-b')
