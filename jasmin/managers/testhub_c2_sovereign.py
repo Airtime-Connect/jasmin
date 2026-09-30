@@ -177,9 +177,12 @@ def _build(environ, read_secret, connect):
                 raise ValueError()
     except Exception:
         raise C2SovereignError('C2 reserved identifier reconciliation failed') from None
+    # No approved CID-to-effective-peer policy exists yet. Leaving this absent
+    # makes every protected send fail closed after the lease/provenance check.
     return TestHubC2Runtime(lambda uid: uid in reserved_uids or authority.is_test_uid(uid),
                             lambda cid: cid in reserved_cids or authority.is_test_cid(cid),
-                            authority.get_scope, authority.get_lease, key)
+                            authority.get_scope, authority.get_lease, key,
+                            verify_peer=None)
 
 
 def build():

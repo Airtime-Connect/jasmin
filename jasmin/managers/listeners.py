@@ -143,7 +143,8 @@ class SMPPClientSMListener:
             # deserializing them; pickle can execute code while loading.
             if self.testhub_c2_guard is not None:
                 try:
-                    self.testhub_c2_guard.egress(self.SMPPClientFactory.config.id, message)
+                    self.testhub_c2_guard.authenticate_message(
+                        self.SMPPClientFactory.config.id, message)
                 except C2Denied as exc:
                     self.log.error('Test Hub C2 denied pre-deserialization for msgid:%s cid:%s: %s',
                                    msgid, self.SMPPClientFactory.config.id, exc)
@@ -284,7 +285,9 @@ class SMPPClientSMListener:
             # Recheck current lease and signed AMQP provenance immediately before egress.
             if self.testhub_c2_guard is not None:
                 try:
-                    self.testhub_c2_guard.egress(self.SMPPClientFactory.config.id, message)
+                    self.testhub_c2_guard.egress(
+                        self.SMPPClientFactory.config.id, message,
+                        self.SMPPClientFactory.config, self.SMPPClientFactory.smpp)
                 except C2Denied as exc:
                     self.log.error('Test Hub C2 denied egress for msgid:%s cid:%s: %s',
                                    msgid, self.SMPPClientFactory.config.id, exc)

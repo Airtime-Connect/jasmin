@@ -43,7 +43,8 @@ def require_denied(action, label):
 
 def runtime(authority):
     return TestHubC2Runtime(authority.is_test_uid, authority.is_test_cid,
-                            authority.get_scope, authority.get_lease, b'k' * 32)
+                            authority.get_scope, authority.get_lease, b'k' * 32,
+                            verify_peer=lambda *_: True)  # DB contract only; peer gate has separate tests.
 
 
 def run_live(socket):
@@ -81,7 +82,10 @@ def run_live(socket):
     message = SimpleNamespace(content=SimpleNamespace(
         properties={'message-id': 'synthetic-message',
                     'headers': {'testhub-c2': token}}, body=b'synthetic-only'))
-    assert guard.egress(CID, message)
+    config = SimpleNamespace(id=CID)
+    protocol = SimpleNamespace(transport=SimpleNamespace(
+        connected=True, getPeer=lambda: SimpleNamespace(host='192.0.2.10')))
+    assert guard.egress(CID, message, config, protocol)
     require_denied(lambda: guard.egress('commercial-cid', message),
                    'commercial egress with Test Hub provenance')
 
@@ -96,7 +100,7 @@ def run_live(socket):
 
     lease = authority.get_lease(UID)
     assert lease.revoked is True and lease.generation == 2
-    require_denied(lambda: guard.egress(CID, message), 'egress after route exit')
+    require_denied(lambda: guard.egress(CID, message, config, protocol), 'egress after route exit')
     require_denied(lambda: guard.enqueue(UID, CID, content),
                    'enqueue after route exit')
     print('PASS: real PG18 reader preflight, cross-tenant registry, PB gate, '

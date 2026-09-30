@@ -78,7 +78,15 @@ class PostgresC2AuthorityTests(unittest.TestCase):
         self.authority = PostgresC2Authority(self.store.connect)
         self.guard = TestHubC2Runtime(
             self.authority.is_test_uid, self.authority.is_test_cid,
-            self.authority.get_scope, self.authority.get_lease, b'k' * 32)
+            self.authority.get_scope, self.authority.get_lease, b'k' * 32,
+            verify_peer=lambda *_: True)  # Synthetic lease test; no real SMPP peer.
+        self.config = SimpleNamespace(id='test-cid')
+        self.protocol = SimpleNamespace(transport=SimpleNamespace(
+            connected=True, getPeer=lambda: SimpleNamespace(host='192.0.2.10')))
+
+    def egress(self, content):
+        return self.guard.egress('test-cid', SimpleNamespace(content=content),
+                                 self.config, self.protocol)
 
     def content(self):
         return SimpleNamespace(properties={'message-id': 'mid', 'headers': {}}, body=b'payload')
@@ -87,7 +95,7 @@ class PostgresC2AuthorityTests(unittest.TestCase):
         content = self.content()
         token = self.guard.enqueue('test-uid', 'test-cid', content)
         content.properties['headers']['testhub-c2'] = token
-        self.assertTrue(self.guard.egress('test-cid', SimpleNamespace(content=content)))
+        self.assertTrue(self.egress(content))
         self.assertEqual(json.loads(token)['tenant_id'], self.store.uid[1])
         self.assertGreaterEqual(len(self.store.calls), 7)
 
@@ -96,14 +104,14 @@ class PostgresC2AuthorityTests(unittest.TestCase):
         content.properties['headers']['testhub-c2'] = self.guard.enqueue('test-uid', 'test-cid', content)
         self.store.lease = (*self.store.lease[:-1], True)
         with self.assertRaises(C2Denied):
-            self.guard.egress('test-cid', SimpleNamespace(content=content))
+            self.egress(content)
 
     def test_store_outage_denies_without_cached_lease(self):
         content = self.content()
         content.properties['headers']['testhub-c2'] = self.guard.enqueue('test-uid', 'test-cid', content)
         self.store.down = True
         with self.assertRaises(C2Denied):
-            self.guard.egress('test-cid', SimpleNamespace(content=content))
+            self.egress(content)
 
     def test_disabled_connector_and_mismatched_tenant_deny(self):
         self.store.uid = (*self.store.uid[:-1], False)
