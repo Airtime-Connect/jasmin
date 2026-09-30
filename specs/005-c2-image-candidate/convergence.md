@@ -1,0 +1,7 @@
+# Convergence
+
+Read-only Supermicro inspection found a running `jasmin` container using `jookies/jasmin:latest`, image ID `sha256:3f049692d22fd66ab08a55073f79db96fe442473ede9615e8ac085ac505a1064`, started 2026-08-26. No receipt binds that host image to Jasmin #12. The existing `c2-image` workflow only built and imported a local image; it retained no exact candidate bytes or digest. The Docker context lacked `.dockerignore`, so retaining its image without excluding `.git` risked packaging checkout metadata.
+
+The proposed workflow checks out the PR head, builds AMD64 with a revision label, tests imports, saves a gzip archive and SHA-256 receipt, reloads and retests, then uploads a seven-day artifact without publishing it. A local AMD64 Docker build from #12 with the final context exclusions passed C2 imports and absence checks for `/build/.git`, `/build/.env` and `/build/.specify`. Its compressed archive was 144 MB with SHA-256 `eac2f34df4b7f4fa92d4d3ccfe239a518947f4e920a80e3da279b4c168505a38`; reloading yielded the same local image ID `sha256:929f7936b19dcb24968436b5552e67d8a87c3499dfaef47643eccaf7865f883c` and passed C2 imports again. An earlier local build from the same source had a different image ID, so these receipts must not be treated as proof of bit-for-bit reproducibility. The local IDs do not identify the future CI artifact or deployed target.
+
+This candidate process does not prove sovereign registry custody, target deployment, peer authentication, AMQP ACL or live egress. Test Hub remains NO-GO.

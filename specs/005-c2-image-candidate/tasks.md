@@ -1,0 +1,9 @@
+# Tasks
+
+- [x] T001 Consult sovereign RAG and AIR-1353; inspect Jasmin #12 and actual Supermicro image metadata.
+- [x] T002 Add Docker context exclusions before retaining an image archive.
+- [x] T003 Bind the CI image to exact PR head and AMD64, save/reload/hash the artifact and retain a receipt.
+- [x] T004 Verify local AMD64 build, C2 import, excluded paths, archive hash and image ID round trip; lint the workflow.
+- [ ] T005 Record exact-head official CI and artifact digest after the draft push.
+
+Target image selection, sovereign transfer/deployment and C2 release remain open.
