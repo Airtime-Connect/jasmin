@@ -1,0 +1,22 @@
+name: Test Hub C2 image import
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/testhub-c2-image.yml'
+      - 'docker/Dockerfile*'
+      - 'pyproject.toml'
+      - 'jasmin/managers/testhub_c2_sovereign.py'
+  workflow_dispatch:
+
+jobs:
+  c2-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build local Jasmin image without publishing
+        run: docker build --file docker/Dockerfile --tag testhub-c2-image:ci .
+      - name: Verify C2 reader driver and allocator from the built image
+        run: |
+          docker run --rm --network none --entrypoint python testhub-c2-image:ci \
+            -c 'import ctypes, psycopg; from jasmin.managers.testhub_c2_sovereign import build; ctypes.CDLL("libjemalloc.so.2"); print("C2 image import and allocator PASS")'
