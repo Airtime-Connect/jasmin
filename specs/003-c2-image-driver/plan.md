@@ -1,0 +1,3 @@
+# Plan
+
+Base on Jasmin #8 exact head `dc916cd5ce19d863d01a8fba869dd82563372a6c`. Keep the existing optional dependency declaration and make each Dockerfile request that extra. Replace Debian's architecture-specific jemalloc absolute path with the loader-resolved soname. Add a PR-only primary image build/import check. Build a baseline and corrected ARM64 primary image locally, then run each with no network; use a disposable Alpine ARM64 container to check that the extra is installable there. Commit only image files, workflow, documentation and Spec Kit artifacts. Open a draft PR stacked on #8, with one push and no registry publication.

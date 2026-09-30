@@ -36,7 +36,7 @@ RUN pip install -e git+https://github.com/jookies/smpp.twisted.git@master#egg=sm
 
 COPY . .
 
-RUN pip install .
+RUN pip install '.[testhub-c2]'
 
 COPY misc/config/*.cfg ${CONFIG_PATH}
 COPY misc/config/resource/*.xml ${RESOURCE_PATH}

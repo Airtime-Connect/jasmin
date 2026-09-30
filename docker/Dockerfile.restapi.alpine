@@ -28,7 +28,7 @@ RUN pip install --upgrade pip
 
 COPY . .
 
-RUN pip install .
+RUN pip install '.[testhub-c2]'
 
 # Clean build dir
 RUN rm -rf /build
