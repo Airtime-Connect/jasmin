@@ -20,13 +20,13 @@ from .listeners import SMPPClientSMListener
 from .testhub_c2 import C2Denied
 
 LOG_CATEGORY = "jasmin-pb-client-mgmt"
-_C2_PB_CID_MUTATORS = frozenset((
+_C2_PB_RESTRICTED_CID_METHODS = frozenset((
     'perspective_connector_remove', 'perspective_connector_start',
-    'perspective_connector_stop',
+    'perspective_connector_stop', 'perspective_connector_config',
 ))
 _C2_PB_UNBOUNDED_MUTATORS = frozenset((
     'perspective_connector_add', 'perspective_load',
-    'perspective_connector_stopall',
+    'perspective_connector_stopall', 'perspective_persist',
 ))
 
 
@@ -43,19 +43,19 @@ class SMPPClientManagerPBAvatar(pb.Avatar):
     def __getattr__(self, name):
         if name.startswith('perspective_') and name != 'perspective_submit_sm':
             method = getattr(self.manager, name)
-            if name in _C2_PB_CID_MUTATORS:
-                def guarded_cid_mutation(cid, *args, **kwargs):
+            if name in _C2_PB_RESTRICTED_CID_METHODS:
+                def guarded_cid_access(cid, *args, **kwargs):
                     guard = self.manager.testhub_c2_guard
                     if guard is not None:
                         try:
-                            if not guard.remote_pb_connector_mutation_allowed(cid):
+                            if not guard.remote_pb_connector_access_allowed(cid):
                                 self.manager.log.error('Test Hub C2 denied remote PB %s for cid:%s', name, cid)
                                 return False
                         except C2Denied as exc:
-                            self.manager.log.error('Test Hub C2 denied remote PB connector mutation: %s', exc)
+                            self.manager.log.error('Test Hub C2 denied remote PB connector access: %s', exc)
                             return False
                     return method(cid, *args, **kwargs)
-                return guarded_cid_mutation
+                return guarded_cid_access
             if name in _C2_PB_UNBOUNDED_MUTATORS:
                 def guarded_unbounded_mutation(*args, **kwargs):
                     if self.manager.testhub_c2_guard is not None:

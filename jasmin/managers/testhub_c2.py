@@ -164,8 +164,8 @@ class TestHubC2Runtime:
         except Exception as exc:
             raise C2Denied('Test Hub principal classification unavailable') from exc
 
-    def remote_pb_connector_mutation_allowed(self, cid):
-        """Remote PB may mutate only a CID outside the reserved C2 inventory."""
+    def remote_pb_connector_access_allowed(self, cid):
+        """Remote PB may access only a CID outside the reserved C2 inventory."""
         try:
             return not _classified(self.is_test_cid(cid))
         except Exception as exc:

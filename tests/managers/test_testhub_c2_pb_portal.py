@@ -19,7 +19,7 @@ class FakeManager:
         self.log = logging.getLogger('c2-pb-portal-test')
         self.testhub_c2_guard = SimpleNamespace(
             remote_pb_submit_allowed=lambda uid, cid: False,
-            remote_pb_connector_mutation_allowed=lambda cid: cid != 'test-cid',
+            remote_pb_connector_access_allowed=lambda cid: cid != 'test-cid',
         )
         self.submit_calls = 0
         self.mutations = []
@@ -58,6 +58,14 @@ class FakeManager:
         self.mutations.append(('stopall', None))
         return 'stopped-all'
 
+    def perspective_connector_config(self, cid):
+        self.mutations.append(('config', cid))
+        return b'fixture-only-password'
+
+    def perspective_persist(self, profile='jcli-prod'):
+        self.mutations.append(('persist', profile))
+        return 'persisted'
+
 
 class TestHubPBPortalTests(TestCase):
     def setUp(self):
@@ -84,14 +92,16 @@ class TestHubPBPortalTests(TestCase):
         self.assertEqual(version, 'test-version')
 
     @defer.inlineCallbacks
-    def test_protected_and_unbounded_connector_mutations_denied_before_dispatch(self):
+    def test_protected_config_and_unbounded_operations_denied_before_dispatch(self):
         root = yield self.client.getRootObject()
         avatar = yield root.callRemote('loginAnonymous', None)
         for method in ('connector_remove', 'connector_start', 'connector_stop'):
             self.assertIs((yield avatar.callRemote(method, 'test-cid')), False)
+        self.assertIs((yield avatar.callRemote('connector_config', 'test-cid')), False)
         self.assertIs((yield avatar.callRemote('connector_add', b'untrusted-pickle')), False)
         self.assertIs((yield avatar.callRemote('load', 'jcli-prod')), False)
         self.assertIs((yield avatar.callRemote('connector_stopall')), False)
+        self.assertIs((yield avatar.callRemote('persist', 'jcli-prod')), False)
         self.assertEqual(self.manager.mutations, [])
 
     @defer.inlineCallbacks
@@ -101,22 +111,27 @@ class TestHubPBPortalTests(TestCase):
         self.assertEqual((yield avatar.callRemote('connector_remove', 'commercial-cid')), 'removed')
         self.assertEqual((yield avatar.callRemote('connector_start', 'commercial-cid')), 'started')
         self.assertEqual((yield avatar.callRemote('connector_stop', 'commercial-cid')), 'stopped')
+        self.assertEqual((yield avatar.callRemote('connector_config', 'commercial-cid')), b'fixture-only-password')
         self.manager.testhub_c2_guard = None
+        self.assertEqual((yield avatar.callRemote('connector_config', 'test-cid')), b'fixture-only-password')
         self.assertEqual((yield avatar.callRemote('connector_add', b'legacy-config')), 'added')
         self.assertEqual((yield avatar.callRemote('load', 'jcli-prod')), 'loaded')
         self.assertEqual((yield avatar.callRemote('connector_stopall')), 'stopped-all')
+        self.assertEqual((yield avatar.callRemote('persist', 'jcli-prod')), 'persisted')
         self.assertEqual(self.manager.mutations, [
             ('remove', 'commercial-cid'), ('start', 'commercial-cid'),
-            ('stop', 'commercial-cid'), ('add', b'legacy-config'),
-            ('load', 'jcli-prod'), ('stopall', None),
+            ('stop', 'commercial-cid'), ('config', 'commercial-cid'),
+            ('config', 'test-cid'), ('add', b'legacy-config'),
+            ('load', 'jcli-prod'), ('stopall', None), ('persist', 'jcli-prod'),
         ])
 
     @defer.inlineCallbacks
-    def test_classification_outage_denies_remote_connector_mutation(self):
-        self.manager.testhub_c2_guard.remote_pb_connector_mutation_allowed = (
+    def test_classification_outage_denies_remote_connector_access(self):
+        self.manager.testhub_c2_guard.remote_pb_connector_access_allowed = (
             lambda cid: (_ for _ in ()).throw(C2Denied('registry unavailable'))
         )
         root = yield self.client.getRootObject()
         avatar = yield root.callRemote('loginAnonymous', None)
         self.assertIs((yield avatar.callRemote('connector_remove', 'commercial-cid')), False)
+        self.assertIs((yield avatar.callRemote('connector_config', 'commercial-cid')), False)
         self.assertEqual(self.manager.mutations, [])
